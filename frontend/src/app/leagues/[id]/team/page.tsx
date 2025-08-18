@@ -49,6 +49,15 @@ export default function MyTeamPage() {
       if (!Number.isFinite(leagueId) || !user) return;
       setLoading(true);
       try {
+        // Enforce that draft must be IN_PROGRESS or COMPLETED to access team page
+        try {
+          const draft = await api.getDraftByLeague(leagueId);
+          if (draft.status === 'PENDING') {
+            showToast('Draft has not started yet. You will be redirected.', { type: 'info' });
+            router.replace(`/leagues/${leagueId}`);
+            return;
+          }
+        } catch {}
         const t = await api.getUserTeamByLeague(leagueId, user.id);
         if (!active) return;
         setTeam(t);

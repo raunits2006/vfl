@@ -56,7 +56,26 @@ export default function DraftPage() {
     try {
       const token = localStorage.getItem('token');
       if (token) {
-        const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws/draft/${draftId}?token=${encodeURIComponent(token)}`);
+        const buildWsBase = () => {
+          // Prefer explicit public backend URL if provided
+          const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL as string | undefined) || undefined;
+          if (backendUrl) {
+            try {
+              const u = new URL(backendUrl);
+              u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+              return u.origin;
+            } catch {}
+          }
+          // Fallback: if frontend on 3000, assume backend on 8000
+          const isHttps = window.location.protocol === 'https:';
+          const host = window.location.hostname;
+          const port = window.location.port === '3000' ? '8000' : window.location.port;
+          return `${isHttps ? 'wss' : 'ws'}://${host}${port ? `:${port}` : ''}`;
+        };
+
+        const wsBase = buildWsBase();
+        const wsUrl = `${wsBase}/ws/draft/${draftId}?token=${encodeURIComponent(token)}`;
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
         ws.onopen = () => {
           // Optionally request current state
@@ -95,7 +114,14 @@ export default function DraftPage() {
       }
     } catch {}
 
+    // Fallback polling in case websocket doesn't deliver updates
+    const poll = setInterval(() => {
+      fetchDraftStatus(draftId);
+      fetchDraftPicks(draftId);
+    }, 3000);
+
     return () => {
+      clearInterval(poll);
       if (wsRef.current) {
         try { wsRef.current.close(); } catch {}
         wsRef.current = null;
@@ -115,7 +141,8 @@ export default function DraftPage() {
       if (!draftStatus?.pick_deadline) return;
       const deadlineMs = new Date(draftStatus.pick_deadline).getTime();
       const remainingSec = Math.max(0, Math.floor((deadlineMs - Date.now()) / 1000));
-      setTimeRemaining(remainingSec);
+      // Clamp to 60 seconds to avoid any clock skew / timezone parsing anomalies
+      setTimeRemaining(Math.min(remainingSec, 60));
     }, 1000);
     return () => clearInterval(timer);
   }, [draftStatus?.pick_deadline]);
@@ -127,7 +154,8 @@ export default function DraftPage() {
       // Use pick_deadline from server for accurate timer
       if (status.pick_deadline) {
         const deadlineMs = new Date(status.pick_deadline).getTime();
-        setTimeRemaining(Math.max(0, Math.floor((deadlineMs - Date.now()) / 1000)));
+        const remainingSec = Math.max(0, Math.floor((deadlineMs - Date.now()) / 1000));
+        setTimeRemaining(Math.min(remainingSec, 60));
       } else {
         setTimeRemaining(0);
       }

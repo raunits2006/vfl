@@ -85,7 +85,8 @@ class DraftOrderResponse(BaseModel):
 @router.post("/start", response_model=DraftStatusResponse)
 def start_draft(
     req: StartDraftRequest,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Start a draft session for a league."""
     # Check if league exists
@@ -96,6 +97,15 @@ def start_draft(
     existing = session.exec(select(DraftSession).where(DraftSession.league_id == req.league_id)).first()
     if existing:
         raise HTTPException(status_code=400, detail="Draft already started for this league")
+    # Only a commissioner can start the draft
+    membership = session.exec(
+        select(LeagueMember).where(
+            LeagueMember.league_id == req.league_id,
+            LeagueMember.user_id == current_user.id
+        )
+    ).first()
+    if not membership or not membership.is_commissioner:
+        raise HTTPException(status_code=403, detail="Only the league commissioner can start the draft")
     # Create draft session
     draft = DraftSession(
         league_id=req.league_id,
@@ -106,13 +116,7 @@ def start_draft(
     session.commit()
     session.refresh(draft)
 
-    # Auto-initialize draft order using current league members for immediate start
-    if not auto_initialize_draft_order(session, draft):
-        # Clean up the draft session if we can't initialize it
-        session.delete(draft)
-        session.commit()
-        raise HTTPException(status_code=400, detail="Cannot start draft: no league members found")
-
+    # Do NOT auto-initialize order here. Keep draft PENDING until order is explicitly set.
     # Normalize datetimes to UTC-aware for consistent JSON (avoid client TZ drift)
     started = normalize_datetime_to_utc(draft.started_at)
     deadline = normalize_datetime_to_utc(draft.pick_deadline)
@@ -157,10 +161,7 @@ def get_draft_status(
     draft = session.exec(select(DraftSession).where(DraftSession.id == draft_id)).first()
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
-    # Auto-initialize draft if pending and no order set (handles older sessions)
-    if draft.status == DraftStatus.PENDING and not draft.draft_order:
-        if not auto_initialize_draft_order(session, draft):
-            raise HTTPException(status_code=500, detail="Failed to auto-initialize draft order")
+    # Do not auto-initialize draft order here; wait for explicit set via POST /{draft_id}/order
     # Ensure active drafts always have a sane pick_deadline (~5 minutes). Fix bad data if far off.
     if draft.status == DraftStatus.IN_PROGRESS:
         now_utc = datetime.now(timezone.utc)

@@ -6,9 +6,13 @@ from sqlmodel import Session, select # Added select
 
 # Assuming your project structure is backend/app/...
 # Adjust imports if your structure is different or if main.py is inside app
-from app.database import get_session, create_db_and_tables_on_startup # Corrected import
+from app.database import get_session, create_db_and_tables_on_startup, engine # Corrected import
 from app.models.match_model import Match, MatchCreate # Corrected import
 from app.celery_app import celery_app # Import your celery app instance
+from app.models.player_pool_model import Players
+from app.add_players import add_players
+from app.models.agent_model import Agent
+from app.utils.agents import FALLBACK_AGENT_TO_CLASS
 from app.workers.match_updater import update_upcoming_matches_task # Import the task
 
 # Import routers
@@ -48,6 +52,35 @@ app.include_router(admin.router)
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables_on_startup()
+    # Seed players if none exist
+    try:
+        session_gen = get_session()
+        session = next(session_gen)
+        try:
+            existing = session.exec(select(Players)).all()
+            if not existing:
+                add_players()
+        finally:
+            session.close()
+    except Exception:
+        # Non-fatal if seeding fails; app can still start
+        pass
+
+    # Seed agents if none exist
+    try:
+        session_gen = get_session()
+        session = next(session_gen)
+        try:
+            has_agent = session.exec(select(Agent)).first()
+            if not has_agent:
+                for name, agent_class in FALLBACK_AGENT_TO_CLASS.items():
+                    session.add(Agent(name=name, agent_class=agent_class))
+                session.commit()
+        finally:
+            session.close()
+    except Exception:
+        # Non-fatal
+        pass
 
 @app.get("/")
 async def root():

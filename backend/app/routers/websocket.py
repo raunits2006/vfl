@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import Optional
+from datetime import timezone
 
 from app.database import get_session
 from app.models.league_models import DraftSession, LeagueMember
@@ -75,14 +76,23 @@ async def websocket_draft_endpoint(
         # Connect to draft room
         await manager.connect_to_draft(websocket, draft_id, user.id)
         
-        # Send initial draft state
+        # Send initial draft state with UTC-normalized deadline
+        def _iso_utc(dt):
+            if not dt:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            return dt.isoformat()
+
         await manager.send_personal_message({
             "type": "draft_state",
             "draft_id": draft_id,
             "status": draft.status.value if draft.status else None,
             "current_pick": draft.current_pick,
             "current_user_id": draft.current_user_id,
-            "pick_deadline": draft.pick_deadline.isoformat() if draft.pick_deadline else None,
+            "pick_deadline": _iso_utc(draft.pick_deadline),
             "connected_users": manager.get_connected_users_in_draft(draft_id)
         }, websocket)
         
@@ -128,13 +138,22 @@ async def handle_draft_message(message: dict, websocket: WebSocket, draft_id: in
         # Send current draft state
         draft = session.exec(select(DraftSession).where(DraftSession.id == draft_id)).first()
         if draft:
+            def _iso_utc(dt):
+                if not dt:
+                    return None
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                else:
+                    dt = dt.astimezone(timezone.utc)
+                return dt.isoformat()
+
             await manager.send_personal_message({
                 "type": "draft_state",
                 "draft_id": draft_id,
                 "status": draft.status.value if draft.status else None,
                 "current_pick": draft.current_pick,
                 "current_user_id": draft.current_user_id,
-                "pick_deadline": draft.pick_deadline.isoformat() if draft.pick_deadline else None,
+                "pick_deadline": _iso_utc(draft.pick_deadline),
                 "connected_users": manager.get_connected_users_in_draft(draft_id)
             }, websocket)
     

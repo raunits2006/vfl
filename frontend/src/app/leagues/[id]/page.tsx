@@ -1,16 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { api, ApiError } from '../../../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Users, RefreshCcw, Shield, Calendar, Crown, ListOrdered, Play, User, Settings } from 'lucide-react';
+import SetDraftOrderModal from '../../../components/SetDraftOrderModal';
 import { useToast } from '../../../components/ToastProvider';
 import type { LeagueLeaderboardEnvelope } from '../../../types/api';
 
 export default function LeagueDetailsPage() {
   const params = useParams<{ id: string }>();
   const leagueId = Number(params.id);
+  const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -23,12 +25,12 @@ export default function LeagueDetailsPage() {
   const [activity, setActivity] = useState<Array<{ type: 'swap' | 'trade'; message: string; timestamp: string }>>([]);
   const [myActivity, setMyActivity] = useState<Array<any>>([]);
   const [myTeamId, setMyTeamId] = useState<number | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
 
   const fetchDetails = async () => {
     try {
-      setLoading(true);
       const data = await api.getLeagueDetails(leagueId);
-      setDetails(data);
+      setDetails((prev: any) => ({ ...(prev || {}), ...(data || {}) }));
       try {
         const draft = await api.getDraftByLeague(leagueId);
         setDraftStatus(draft);
@@ -91,6 +93,35 @@ export default function LeagueDetailsPage() {
     fetchDetails();
   }, [leagueId, user?.id]);
 
+  // Auto-refresh league details periodically so UI updates without manual refresh
+  useEffect(() => {
+    if (!Number.isFinite(leagueId)) return;
+    const interval = setInterval(() => {
+      fetchDetails();
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [leagueId, user?.id]);
+
+  // Refresh when tab becomes visible again without flicker
+  useEffect(() => {
+    let rafId: number | null = null;
+    let scheduled = false;
+    const onVisibility = () => {
+      if (!document.hidden && !scheduled) {
+        scheduled = true;
+        rafId = requestAnimationFrame(() => {
+          scheduled = false;
+          fetchDetails();
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [leagueId, user?.id]);
+
   const regeneratePin = async () => {
     try {
       setPinLoading(true);
@@ -111,9 +142,9 @@ export default function LeagueDetailsPage() {
   const startDraft = async () => {
     try {
       const status = await api.startDraft(leagueId);
-      if (typeof window !== 'undefined') {
-        window.location.href = `/leagues/${leagueId}/draft?draftId=${status.draft_id}`;
-      }
+      // After starting, do not redirect; allow commissioner to set order
+      setDraftStatus(status);
+      showToast('Draft created. Set the draft order to begin.', { type: 'success' });
     } catch (e: any) {
       if (e?.message?.includes('already started')) {
         try {
@@ -123,9 +154,8 @@ export default function LeagueDetailsPage() {
               try { await api.createTeam(leagueId, user.id, `${user.username}'s Team`); } catch {}
             }
           }
-          if (typeof window !== 'undefined') {
-            window.location.href = `/leagues/${leagueId}/draft?draftId=${existing.draft_id}`;
-          }
+          // Keep user on page; they can go to draft once IN_PROGRESS
+          setDraftStatus(existing);
           return;
         } catch {}
       }
@@ -161,14 +191,11 @@ export default function LeagueDetailsPage() {
         return;
       }
 
-      // Set draft order with randomization
-      const result = await api.setDraftOrder(draftStatus.draft_id, memberIds, true);
+      // Set draft order using current display order (no randomize). This is kept as a fallback action.
+      const result = await api.setDraftOrder(draftStatus.draft_id, memberIds, false);
       showToast('Draft order set successfully!', { type: 'success' });
       
-      // Redirect to draft page
-      if (typeof window !== 'undefined') {
-        window.location.href = `/leagues/${leagueId}/draft?draftId=${draftStatus.draft_id}`;
-      }
+      router.push(`/leagues/${leagueId}/draft?draftId=${draftStatus.draft_id}`);
     } catch (e: any) {
       // Handle specific error cases with user-friendly messages
       if (e?.message?.includes('Only the league commissioner can set draft order')) {
@@ -197,6 +224,18 @@ export default function LeagueDetailsPage() {
     }
   };
 
+  const handleSaveOrder = async (orderedUserIds: number[]) => {
+    if (!draftStatus) return;
+    try {
+      await api.setDraftOrder(draftStatus.draft_id, orderedUserIds, false);
+      setShowOrderModal(false);
+      showToast('Draft order set successfully!', { type: 'success' });
+      router.push(`/leagues/${leagueId}/draft?draftId=${draftStatus.draft_id}`);
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to set draft order', { type: 'error' });
+    }
+  };
+
   const goToDraft = async () => {
     try {
       const status = await api.getDraftByLeague(leagueId);
@@ -209,30 +248,26 @@ export default function LeagueDetailsPage() {
           } catch {}
         }
       }
-      if (typeof window !== 'undefined') {
-        window.location.href = `/leagues/${leagueId}/draft?draftId=${status.draft_id}`;
-      }
+      router.push(`/leagues/${leagueId}/draft?draftId=${status.draft_id}`);
     } catch (e: any) {
       showToast('No draft found for this league. Start one first.', { type: 'warning' });
     }
   };
 
+  {/* Modal for setting draft order */}
+
   const goToMyTeam = async () => {
     if (!user || !Number.isFinite(leagueId)) return;
     try {
       await api.getUserTeamByLeague(leagueId, user.id);
-      if (typeof window !== 'undefined') {
-        window.location.href = `/leagues/${leagueId}/team`;
-      }
+      router.push(`/leagues/${leagueId}/team`);
     } catch (e: any) {
       showToast('You do not have a team in this league yet. Join and draft first.', { type: 'info' });
     }
   };
 
   const goToSettings = () => {
-    if (typeof window !== 'undefined') {
-      window.location.href = `/leagues/${leagueId}/settings`;
-    }
+    router.push(`/leagues/${leagueId}/settings`);
   };
 
   if (loading || !details) {
@@ -360,16 +395,21 @@ export default function LeagueDetailsPage() {
             <Calendar className="h-5 w-5 mr-2 text-valorant-600" /> Draft
           </h2>
           <div className="space-y-3">
-            <button onClick={startDraft} className="btn-primary w-full flex items-center justify-center">
+            <button 
+              onClick={startDraft} 
+              className="btn-primary w-full flex items-center justify-center"
+              disabled={!!draftStatus && draftStatus.status !== 'PENDING'}
+            >
               <Play className="h-4 w-4 mr-2" /> Start Draft
             </button>
-            <button 
-              onClick={setDraftOrder} 
-              className="btn-secondary w-full flex items-center justify-center"
-              disabled={!draftStatus}
-            >
-              <ListOrdered className="h-4 w-4 mr-2" /> Set Draft Order
-            </button>
+            {draftStatus?.status === 'PENDING' && (
+              <button 
+                onClick={() => setShowOrderModal(true)} 
+                className="btn-secondary w-full flex items-center justify-center"
+              >
+                <ListOrdered className="h-4 w-4 mr-2" /> Set Draft Order
+              </button>
+            )}
           </div>
         </div>
         <div className="md:col-span-3 card">
@@ -532,6 +572,14 @@ export default function LeagueDetailsPage() {
           {renderBoard(seasonBoard)}
         </div>
       </div>
+
+      {/* Modal: Set Draft Order */}
+      <SetDraftOrderModal
+        isOpen={showOrderModal}
+        onClose={() => setShowOrderModal(false)}
+        members={(details?.members || []).map((m: any) => ({ user_id: m.user_id, username: m.username }))}
+        onSubmit={handleSaveOrder}
+      />
     </div>
   );
 }
