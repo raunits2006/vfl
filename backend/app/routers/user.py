@@ -26,7 +26,8 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def create_user(
     user_data: UserCreate,
     session: Session = Depends(get_session)
@@ -66,7 +67,8 @@ def create_user(
         created_at=user.created_at.isoformat()
     )
 
-@router.get("/", response_model=List[UserResponse])
+@router.get("", response_model=List[UserResponse])
+@router.get("/", response_model=List[UserResponse], include_in_schema=False)
 def get_users(
     session: Session = Depends(get_session),
     skip: int = 0,

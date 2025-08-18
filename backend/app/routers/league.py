@@ -106,7 +106,8 @@ def create_team_for_user(session: Session, league_id: int, user_id: int, usernam
     session.refresh(team)
     return team
 
-@router.post("/", response_model=LeagueResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=LeagueResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=LeagueResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def create_league(
     league_data: LeagueCreate,
     session: Session = Depends(get_session)
@@ -171,7 +172,8 @@ def create_league(
         member_count=len(session.exec(select(LeagueMember).where(LeagueMember.league_id == league.id)).all())
     )
 
-@router.get("/", response_model=List[LeagueResponse])
+@router.get("", response_model=List[LeagueResponse])
+@router.get("/", response_model=List[LeagueResponse], include_in_schema=False)
 def get_leagues(
     session: Session = Depends(get_session),
     skip: int = 0,
@@ -598,14 +600,6 @@ def join_league(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This league requires a PIN to join"
             )
-        if join_data.pin != league.join_pin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid PIN"
-            )
-    
-    # If pin is provided, validate it
-    if join_data.pin is not None and league.join_pin is not None:
         if join_data.pin != league.join_pin:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

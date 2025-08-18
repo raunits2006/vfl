@@ -24,6 +24,8 @@ app.add_middleware(
         "http://localhost:3001",  # Alternative React port
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
+        "http://frontend:3000",  # Frontend container in Docker
+        "*",  # Allow all origins in development (remove in production)
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -43,9 +45,9 @@ app.include_router(websocket.router)
 app.include_router(admin_auth.router)
 app.include_router(admin.router)
 
-# @app.on_event("startup")
-# def on_startup():
-#     create_db_and_tables_on_startup()
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables_on_startup()
 
 @app.get("/")
 async def root():

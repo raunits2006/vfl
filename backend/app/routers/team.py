@@ -149,7 +149,8 @@ def set_agent_prediction(
     session.commit()
     return AgentPredictionResponse(team_id=team_id, player_name=body.player_name, picks=normalized, updated_at=now.isoformat())
 
-@router.post("/", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=TeamResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def create_team(
     team_data: TeamCreate,
     session: Session = Depends(get_session)

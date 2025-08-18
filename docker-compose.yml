@@ -29,6 +29,7 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true # Often helps with hot-reloading in Docker on some systems
       - WDS_SOCKET_PORT=0 # For Create React App to work correctly behind a proxy/in Docker
+      - BACKEND_URL=http://backend:8000 # Ensure frontend knows backend URL
     depends_on:
       - backend
 
