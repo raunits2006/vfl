@@ -1,0 +1,88 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env # Explicitly load the .env file for this service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app # Mounts your local backend code into the container
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload # Enables auto-reload for backend
+    environment:
+      - PYTHONUNBUFFERED=1 # Ensures Python output is sent straight to the terminal
+      - DATABASE_URL=${DATABASE_URL_ENV} # Value will be sourced from an environment variable
+    depends_on:
+      - db # Ensures db is started before backend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    command: npm run dev # Start the Next.js development server
+    ports:
+      - "3000:3000" # React development server typically runs on port 3000
+    volumes:
+      - ./frontend:/app # Mounts your local frontend code
+      - /app/node_modules # Anonymous volume to persist node_modules separate from host
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Often helps with hot-reloading in Docker on some systems
+      - WDS_SOCKET_PORT=0 # For Create React App to work correctly behind a proxy/in Docker
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:13-alpine # Using alpine for a smaller image
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      - "5433:5432" # Exposing on 5433 on host to avoid conflicts if you have local postgres on 5432
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER_ENV}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD_ENV}
+      - POSTGRES_DB=${POSTGRES_DB_ENV}
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine  # Using a specific version, alpine for smaller size
+    ports:
+      - "6379:6379"       # Expose Redis port if needed for external tools/debugging
+    volumes:
+      - redis_data:/data  # Persist Redis data
+    restart: unless-stopped
+
+  celery_worker: # Corrected indentation: This is a top-level service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app worker -l info # Command to start the Celery worker
+    volumes:
+      - ./backend:/app    # Mount your backend code, same as the backend service
+    env_file:
+      - ./backend/.env    # Load environment variables from backend's .env
+                            # This should contain DATABASE_URL and REDIS_URL
+                            # for your app.core.config.settings to pick up.
+    depends_on:
+      - db                # Worker needs the database
+      - redis             # Worker needs Redis
+    restart: unless-stopped
+
+  celery_beat: # Corrected indentation: This is a top-level service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app beat -l info # Command to start Celery beat
+                                                  # This will pick up schedules defined in celery_app.conf.beat_schedule
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - db                # Beat might interact with DB if using Django-Celery-Beat, but good to have
+      - redis             # Beat needs Redis to send messages
+    restart: unless-stopped
+
+volumes:
+  postgres_data: # Persists database data
+  redis_data:

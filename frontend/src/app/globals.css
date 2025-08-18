@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  
+  body {
+    @apply text-gray-900 bg-gray-50;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-valorant-600 hover:bg-valorant-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-valorant-500 focus:ring-offset-2;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
+  }
+  
+  .btn-sm {
+    @apply py-1 px-3 text-sm;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-md p-6;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-valorant-500 focus:border-valorant-500 transition-colors duration-200;
+  }
+  
+  .draft-timer {
+    @apply bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded-lg;
+  }
+  
+  .player-card {
+    @apply bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-200;
+  }
+  
+  .team-card {
+    @apply bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-valorant-300 transition-colors duration-200;
+  }
+
+  /* Auth page specific styles */
+  .auth-gradient {
+    @apply bg-gradient-to-br from-valorant-900 via-valorant-800 to-valorant-700;
+  }
+
+  /* Loading animation improvements */
+  .loading-spinner {
+    @apply animate-spin rounded-full border-b-2;
+  }
+
+  /* Mobile-first responsive utilities */
+  .mobile-padding {
+    @apply px-4 sm:px-6 lg:px-8;
+  }
+
+  .mobile-text {
+    @apply text-sm sm:text-base;
+  }
+} 
