@@ -8,8 +8,13 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str = "redis://redis:6379/0"
     VLR_API_UPCOMING_MATCHES_URL: str = "https://vlrggapi.vercel.app/match?q=upcoming"
+    # Optional endpoint to fetch recent or live results to backfill matches
+    VLR_API_RECENT_MATCHES_URL: str | None = None
+    VLR_API_LIVE_SCORE_URL: str = "https://vlrggapi.vercel.app/match?q=live_score"
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # Comma-separated list of allowed origins for CORS in production
+    ALLOWED_ORIGINS: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding='utf-8', extra='ignore')
 

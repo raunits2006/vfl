@@ -56,10 +56,21 @@ async def _fetch_and_process_matches_logic(session: Session):
         logger.warning(f"Expected a list of matches, but found type: {type(match_list)}. Raw data snippet: {str(raw_data)[:200]}")
         return # Stop processing if the structure is not as expected
 
-    if not match_list:
-        logger.info("No upcoming matches found from the API.")
-        return
+    # Always merge in live matches so we don't miss in-progress games
+    try:
+        async with httpx.AsyncClient() as client:
+            live_resp = await client.get(settings.VLR_API_LIVE_SCORE_URL)
+            live_resp.raise_for_status()
+            live_raw = live_resp.json()
+            live_list = live_raw.get("data", {}).get("segments", [])
+            if isinstance(live_list, list) and live_list:
+                logger.info(f"Merging {len(live_list)} live matches from live_score endpoint")
+                match_list = (match_list or []) + live_list
+    except Exception as exc:
+        logger.error(f"Failed to fetch live matches for merge: {exc}")
 
+    # Deduplicate by VLR match id to avoid double-processing when merging
+    seen_vlr_ids: set[str] = set()
     for match_item in match_list:
         if not isinstance(match_item, dict):
             logger.warning(f"Skipping non-dict match item: {match_item}")
@@ -75,6 +86,9 @@ async def _fetch_and_process_matches_logic(session: Session):
         if not vlr_id:
             logger.warning(f"Skipping match item with invalid URL: {match_page_url}")
             continue
+        if vlr_id in seen_vlr_ids:
+            continue
+        seen_vlr_ids.add(vlr_id)
 
         try:
             # Prepare data for MatchCreate model
@@ -120,6 +134,32 @@ async def _fetch_and_process_matches_logic(session: Session):
     else:
         logger.info("No match data was processed or changed that required a commit.")
 
+    # For any live matches we just upserted, trigger scraping immediately
+    try:
+        now = int(datetime.now(timezone.utc).timestamp())
+        live_candidates = session.exec(
+            select(Match).where(
+                and_(
+                    Match.unix_timestamp >= now - 14400,
+                    Match.unix_timestamp <= now + 3600,
+                    or_(
+                        Match.match_event.contains("VCT "),
+                        Match.match_event.contains("Masters "),
+                        Match.match_event.contains("Champions "),
+                        Match.match_series.contains("VCT "),
+                        Match.match_series.contains("Masters "),
+                        Match.match_series.contains("Champions ")
+                    )
+                )
+            )
+        ).all()
+        for m in live_candidates:
+            scrape_live_match_data.delay(m.id)
+        if live_candidates:
+            logger.info(f"Triggered scraping for {len(live_candidates)} live candidate matches after updater run.")
+    except Exception as e:
+        logger.error(f"Failed to trigger scraping after updater: {e}")
+
 
 @celery_app.task(name="app.workers.match_updater.update_upcoming_matches_task", bind=True, max_retries=3, default_retry_delay=60 * 5) # Retry after 5 mins
 def update_upcoming_matches_task(self): # 'self' is bound to the task instance
@@ -157,15 +197,27 @@ def maybe_trigger_scrape_live_matches(self):
             and_(
                 Match.unix_timestamp >= now - 14400,  # started within last 4 hours
                 Match.unix_timestamp <= now + 3600,   # OR starting within next hour (matches can start early)
-                Match.match_event.contains("VCT ")
+                or_(
+                    Match.match_event.contains("VCT "),
+                    Match.match_event.contains("Masters "),
+                    Match.match_event.contains("Champions ")
+                )
             )
         )
         live_matches = session.exec(statement).all()
+        if not live_matches:
+            logger.info("No live matches found in DB; attempting to backfill from live_score API and retry.")
+            try:
+                asyncio.run(_fetch_and_process_matches_logic(session))
+            except Exception as exc:
+                logger.error(f"Backfill from live_score failed: {exc}")
+            # Re-check after backfill
+            live_matches = session.exec(statement).all()
         if live_matches:
-            logger.info(f"Found {len(live_matches)} live VCT matches. Triggering scraping task.")
+            logger.info(f"Found {len(live_matches)} live matches. Triggering scraping task.")
             scrape_live_matches_task.delay()
         else:
-            logger.info("No live VCT matches found. Skipping scraping task.")
+            logger.info("Still no live matches after backfill attempt.")
 
 @celery_app.task(name="app.workers.update_live_matches", bind=True, max_retries=3, default_retry_delay=60 * 5)
 def scrape_live_matches_task(self):
@@ -180,10 +232,16 @@ def scrape_live_matches_task(self):
             and_(
                 Match.unix_timestamp >= now - 14400,  # started within last 4 hours
                 Match.unix_timestamp <= now + 3600,   # OR starting within next hour (matches can start early)
-                Match.match_event.contains("VCT ")
+                or_(
+                    Match.match_event.contains("VCT "),
+                    Match.match_event.contains("Masters "),
+                    Match.match_event.contains("Champions ")
+                )
             )
         )
         live_matches = session.exec(statement).all()
+        if not live_matches:
+            logger.info("No live matches found to scrape.")
         for match in live_matches:
             # Optionally, check if already scraped recently to avoid duplicates
             scrape_live_match_data.delay(match.id)

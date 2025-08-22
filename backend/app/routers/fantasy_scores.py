@@ -4,7 +4,7 @@ Fantasy scoring API endpoints for retrieving team and player performance data.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select, func, and_, or_
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
 from app.database import get_session
@@ -677,7 +677,7 @@ async def get_league_leaderboard(
         league_id=league_id,
         league_name=league.name,
         teams=team_responses,
-        last_updated=datetime.utcnow()
+        last_updated=datetime.now(timezone.utc)
     )
 
 
@@ -749,8 +749,8 @@ async def get_league_leaderboard_weekly(
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
-    end_ts = int(datetime.utcnow().timestamp())
-    start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
+    end_ts = int(datetime.now(timezone.utc).timestamp())
+    start_ts = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
 
     teams = session.exec(select(Team).where(Team.league_id == league_id)).all()
     league_settings = session.exec(select(LeagueSettings).where(LeagueSettings.league_id == league_id)).first()
@@ -827,7 +827,7 @@ async def get_league_leaderboard_season(
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     season_year = year or now.year
     season_start = datetime(season_year, 1, 1)
     start_ts = int(season_start.timestamp())
@@ -890,7 +890,7 @@ async def get_league_leaderboard_season(
         league_id=league_id,
         league_name=league.name,
         teams=team_responses,
-        last_updated=datetime.utcnow()
+        last_updated=datetime.now(timezone.utc)
     )
 
 
@@ -1031,7 +1031,7 @@ async def get_player_stats(
     # If days filter is specified, we need to modify the event-based approach
     if days:
         # For days-based filtering, we'll calculate manually
-        cutoff_timestamp = int((datetime.utcnow() - timedelta(days=days)).timestamp())
+        cutoff_timestamp = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
         
         # Get matches within the time range for this player
         matches = session.exec(
@@ -1178,57 +1178,79 @@ async def get_player_match_maps_breakdown(
 
 @router.get("/matches/live", response_model=List[LiveMatchResponse])
 async def get_live_matches(session: Session = Depends(get_session)):
-    """Get currently live matches with real-time player scores."""
-    
-    # Find matches that are currently live (within last 4 hours and have live scores)
-    current_time = int(datetime.utcnow().timestamp())
+    """Get currently live matches with deduped live scores and players."""
+
+    current_time = int(datetime.now(timezone.utc).timestamp())
     cutoff_time = current_time - 14400  # 4 hours ago
 
-    live_matches_data = session.exec(
+    # Order by most recent first so we can pick the latest per match
+    live_rows = session.exec(
         select(Match, LiveScore)
         .join(LiveScore, Match.id == LiveScore.match_id)
         .where(
             and_(
                 Match.unix_timestamp >= cutoff_time,
                 Match.unix_timestamp <= current_time,
-                Match.match_event.contains("VCT ")
+                or_(
+                    Match.match_event.contains("VCT "),
+                    Match.match_event.contains("Masters "),
+                    Match.match_event.contains("Champions ")
+                )
             )
         )
         .order_by(LiveScore.timestamp.desc())
     ).all()
-    
-    live_matches = []
-    for match, live_score in live_matches_data:
-        # Get live player scores for this match
+
+    # Keep only the latest LiveScore per match
+    latest_by_match: dict[int, tuple[Match, LiveScore]] = {}
+    for match, live_score in live_rows:
+        if match.id in latest_by_match:
+            continue
+        latest_by_match[match.id] = (match, live_score)
+
+    live_matches: list[LiveMatchResponse] = []
+    for match_id, (match, live_score) in latest_by_match.items():
+        # Get player stats ordered by most recent (id desc) and dedupe by exact stat line to remove duplicates
+        # This allows same player on different maps but removes exact duplicates
         players_data = session.exec(
             select(PlayerStat)
             .where(PlayerStat.match_id == match.id)
             .order_by(PlayerStat.score.desc())
         ).all()
 
-        live_player_scores = []
+        unique_players: dict[tuple[str, str | None, str | None, int, int, int], PlayerStat] = {}
         for player in players_data:
-            live_player_scores.append({
-                "player_name": player.player_name,
-                "map_name": player.map_name,
-                "agent": player.agent,
-                "kills": player.kills,
-                "deaths": player.deaths,
-                "assists": player.assists,
-                "score": float(player.score)
-            })
+            # Dedupe key includes all stats to only remove exact duplicates
+            key = (player.player_name, player.map_name, player.agent, player.kills, player.deaths, player.assists)
+            if key in unique_players:
+                continue
+            unique_players[key] = player
 
-        live_match = LiveMatchResponse(
-            match_id=match.id,
-            team1=match.team1,
-            team2=match.team2,
-            current_map=live_score.current_map,
-            team1_score=str(live_score.team1_score),
-            team2_score=str(live_score.team2_score),
-            live_player_scores=live_player_scores
+        live_player_scores = [
+            {
+                "player_name": p.player_name,
+                "map_name": p.map_name,
+                "agent": p.agent,
+                "kills": p.kills,
+                "deaths": p.deaths,
+                "assists": p.assists,
+                "score": float(p.score or 0.0),
+            }
+            for p in unique_players.values()
+        ]
+
+        live_matches.append(
+            LiveMatchResponse(
+                match_id=match.id,
+                team1=match.team1,
+                team2=match.team2,
+                current_map=live_score.current_map,
+                team1_score=str(live_score.team1_score),
+                team2_score=str(live_score.team2_score),
+                live_player_scores=live_player_scores,
+            )
         )
-        live_matches.append(live_match)
-    
+
     return live_matches
 
 
@@ -1236,7 +1258,7 @@ async def get_live_matches(session: Session = Depends(get_session)):
 async def get_matches_with_status(session: Session = Depends(get_session)):
     """Get matches with dynamic status based on current time and scraping activity."""
 
-    current_time = int(datetime.utcnow().timestamp())
+    current_time = int(datetime.now(timezone.utc).timestamp())
     four_hours_ago = current_time - (4 * 60 * 60)
 
     # Get all VCT matches from the last 4 hours to 24 hours in the future
@@ -1244,16 +1266,26 @@ async def get_matches_with_status(session: Session = Depends(get_session)):
         select(Match)
         .where(
             and_(
-                Match.match_event.contains("VCT "),
+                or_(
+                    Match.match_event.contains("VCT "),
+                    Match.match_event.contains("Masters "),
+                    Match.match_event.contains("Champions ")
+                ),
                 Match.unix_timestamp >= four_hours_ago,
-                Match.unix_timestamp <= current_time + (24 * 60 * 60)  # Next 24 hours
+                Match.unix_timestamp <= current_time + (24 * 60 * 60)
             )
         )
         .order_by(Match.unix_timestamp)
     ).all()
 
     match_responses = []
+    seen_match_keys: set[str] = set()
     for match in matches_data:
+        # Deduplicate by VLR match id when available, else by match_page
+        dedupe_key = match.vlr_match_id or match.match_page or str(match.id)
+        if dedupe_key in seen_match_keys:
+            continue
+        seen_match_keys.add(dedupe_key)
         # Calculate time until match
         time_until_match = match.unix_timestamp - current_time
 
@@ -1263,7 +1295,7 @@ async def get_matches_with_status(session: Session = Depends(get_session)):
             .where(
                 and_(
                     LiveScore.match_id == match.id,
-                    LiveScore.timestamp >= datetime.utcnow() - timedelta(minutes=10)  # Last 10 minutes
+                    LiveScore.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=10)  # Last 10 minutes
                 )
             )
             .limit(1)
