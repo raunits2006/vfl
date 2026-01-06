@@ -27,12 +27,13 @@ export default function SignUpPage() {
     if (!/[A-Z]/.test(password)) errors.push('One uppercase letter');
     if (!/[a-z]/.test(password)) errors.push('One lowercase letter');
     if (!/[0-9]/.test(password)) errors.push('One number');
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push('One special character');
     return errors;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (formData.password !== formData.confirmPassword) {
       showToast('Passwords do not match', { type: 'warning' });
       return;
@@ -71,8 +72,8 @@ export default function SignUpPage() {
       <div className="max-w-md w-full space-y-8">
         {/* Back to Home Link */}
         <div>
-          <Link 
-            href="/" 
+          <Link
+            href="/"
             className="inline-flex items-center text-valorant-200 hover:text-white transition-colors duration-200"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -161,12 +162,12 @@ export default function SignUpPage() {
                   )}
                 </button>
               </div>
-              
+
               {/* Password Requirements */}
               {formData.password && (
                 <div className="mt-2 space-y-1">
                   <p className="text-xs text-gray-600">Password requirements:</p>
-                  {['At least 8 characters', 'One uppercase letter', 'One lowercase letter', 'One number'].map((requirement) => {
+                  {['At least 8 characters', 'One uppercase letter', 'One lowercase letter', 'One number', 'One special character'].map((requirement) => {
                     const isMet = !passwordErrors.includes(requirement);
                     return (
                       <div key={requirement} className={`flex items-center text-xs ${isMet ? 'text-green-600' : 'text-gray-400'}`}>
@@ -239,8 +240,8 @@ export default function SignUpPage() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Already have an account?{' '}
-              <Link 
-                href="/signin" 
+              <Link
+                href="/signin"
                 className="font-medium text-valorant-600 hover:text-valorant-500 transition-colors duration-200"
               >
                 Sign in here

@@ -1,11 +1,12 @@
 """
 Authentication router for user login, registration, and token management.
 """
+import re
 from datetime import timedelta, datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_
@@ -18,14 +19,31 @@ from app.utils.auth import (
     get_current_active_user,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
+from app.utils.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # Pydantic models
 class UserRegister(BaseModel):
-    username: str
+    username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        """Validate password meets security requirements."""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
+            raise ValueError('Password must contain at least one special character (!@#$%^&*(),.?":{}|<>)')
+        return v
 
 class UserResponse(BaseModel):
     id: int
@@ -41,11 +59,14 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
+@limiter.limit("3/minute")
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(
+    request: Request,
     user_data: UserRegister,
     session: Session = Depends(get_session)
 ):
+    """Register a new user."""
     """Register a new user."""
     # Check if username OR email already exist (avoid enumeration)
     existing = session.exec(
@@ -90,8 +111,10 @@ def register_user(
         created_at=user.created_at.isoformat()
     )
 
+@limiter.limit("5/minute")
 @router.post("/login", response_model=Token)
 def login_user(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: Session = Depends(get_session)
 ):

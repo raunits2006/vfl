@@ -1,8 +1,11 @@
 import time
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import httpx
 from sqlmodel import Session, select # Added select
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 # Assuming your project structure is backend/app/...
 # Adjust imports if your structure is different or if main.py is inside app
@@ -15,11 +18,16 @@ from app.models.agent_model import Agent
 from app.utils.agents import FALLBACK_AGENT_TO_CLASS
 from app.workers.match_updater import update_upcoming_matches_task, maybe_trigger_scrape_live_matches # Import the tasks
 from app.core.config import settings
+from app.utils.rate_limit import limiter
 
 # Import routers
 from app.routers import league, team, user, draft, fantasy_scores, free_agents, auth, trade, websocket, admin_auth, admin
 
 app = FastAPI(title="Valorant Fantasy League API", version="1.0.0")
+
+# Configure rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware (env-configurable)
 _default_allowed_origins = [
@@ -34,12 +42,22 @@ _default_allowed_origins = [
 _env_allowed_origins = [o.strip() for o in (getattr(settings, 'ALLOWED_ORIGINS', None) or "").split(',') if o.strip()]
 _allowed_origins = _env_allowed_origins if _env_allowed_origins else _default_allowed_origins
 
+# Explicit allowed methods and headers for security
+_allowed_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+_allowed_headers = [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    "Origin",
+    "X-Requested-With",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=_allowed_methods,
+    allow_headers=_allowed_headers,
 )
 
 # Include routers

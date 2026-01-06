@@ -15,7 +15,8 @@ from app.models.admin_model import Admin
 from app.core.config import settings
 
 # Admin-specific security configuration
-ADMIN_SECRET_KEY = settings.SECRET_KEY + "_ADMIN"  # Enhanced security with different key
+# Use dedicated admin secret key if provided, otherwise derive from main secret
+ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY or (settings.SECRET_KEY + "_ADMIN")
 ADMIN_ALGORITHM = "HS256"
 ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Shorter token expiry for admin
 

@@ -2,11 +2,13 @@
 Admin authentication router for secure admin login and management.
 """
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from typing import Optional
+
+from app.utils.rate_limit import limiter
 
 from app.database import get_session
 from app.models.admin_model import Admin
@@ -102,8 +104,10 @@ def register_admin(
         last_login=new_admin.last_login.isoformat() if new_admin.last_login else None
     )
 
+@limiter.limit("5/minute")
 @router.post("/login", response_model=AdminToken)
 def login_admin(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: Session = Depends(get_session)
 ):
@@ -141,8 +145,10 @@ def read_current_admin(current_admin: Admin = Depends(get_current_active_admin))
     )
 
 # Initial admin creation endpoint (only works if no admins exist)
+@limiter.limit("3/minute")
 @router.post("/init", response_model=AdminResponse, status_code=status.HTTP_201_CREATED)
 def create_initial_admin(
+    request: Request,
     admin_data: AdminRegister,
     session: Session = Depends(get_session)
 ):

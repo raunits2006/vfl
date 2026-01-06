@@ -11,10 +11,16 @@ class Settings(BaseSettings):
     # Optional endpoint to fetch recent or live results to backfill matches
     VLR_API_RECENT_MATCHES_URL: str | None = None
     VLR_API_LIVE_SCORE_URL: str = "https://vlrggapi.vercel.app/match?q=live_score"
-    SECRET_KEY: str = "your-secret-key-change-this-in-production"
+    # SECURITY: No default - must be provided via environment variable
+    # Generate with: python -c "import secrets; print(secrets.token_urlsafe(64))"
+    SECRET_KEY: str
+    # Optional separate admin secret key - if not provided, derived from SECRET_KEY
+    ADMIN_SECRET_KEY: str | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     # Comma-separated list of allowed origins for CORS in production
     ALLOWED_ORIGINS: str | None = None
+    # Environment mode: development or production
+    ENVIRONMENT: str = "development"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding='utf-8', extra='ignore')
 
