@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '../../../../contexts/AuthContext';
-import { api } from '../../../../utils/api';
+import { api, ApiError } from '../../../../utils/api';
 import type { LeagueSettings } from '../../../../types/api';
 import { useToast } from '../../../../components/ToastProvider';
+import { Shield } from 'lucide-react';
 
 export default function LeagueSettingsPage() {
   const params = useParams<{ id: string }>();
@@ -18,6 +20,7 @@ export default function LeagueSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [details, setDetails] = useState<any>(null);
   const [settings, setSettings] = useState<LeagueSettings | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const isCommissioner = useMemo(() => {
     if (!details || !user) return false;
@@ -43,7 +46,12 @@ export default function LeagueSettingsPage() {
         if (!active) return;
         setDetails(d);
         setSettings(s);
+        setAccessDenied(false);
       } catch (e: any) {
+        if (e instanceof ApiError && e.status === 403) {
+          setAccessDenied(true);
+          return;
+        }
         showToast(e?.message || 'Failed to load settings', { type: 'error' });
       } finally {
         if (active) setLoading(false);
@@ -92,6 +100,21 @@ export default function LeagueSettingsPage() {
     }
   };
 
+  if (accessDenied) {
+    return (
+      <div className="card text-center py-16">
+        <div className="mx-auto w-16 h-16 mb-4 rounded-full bg-red-100 flex items-center justify-center">
+          <Shield className="h-8 w-8 text-red-600" />
+        </div>
+        <h2 className="text-xl font-bold text-red-600 mb-2">Access Denied</h2>
+        <p className="text-gray-600 mb-6">You are not a member of this league.</p>
+        <Link href="/leagues" className="btn-primary">
+          Go to My Leagues
+        </Link>
+      </div>
+    );
+  }
+
   if (loading || !details || !settings) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -130,21 +153,21 @@ export default function LeagueSettingsPage() {
             <label className="block">
               <span className="text-sm text-gray-700">Max Players</span>
               <input type="number" min={1} value={settings.max_players}
-                     onChange={e => updateField('max_players', Number(e.target.value))}
-                     className="input-field mt-1" />
+                onChange={e => updateField('max_players', Number(e.target.value))}
+                className="input-field mt-1" />
             </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-sm text-gray-700">Starters</span>
                 <input type="number" min={0} value={settings.starting_players}
-                       onChange={e => updateField('starting_players', Number(e.target.value))}
-                       className="input-field mt-1" />
+                  onChange={e => updateField('starting_players', Number(e.target.value))}
+                  className="input-field mt-1" />
               </label>
               <label className="block">
                 <span className="text-sm text-gray-700">Bench</span>
                 <input type="number" min={0} value={settings.bench_players}
-                       onChange={e => updateField('bench_players', Number(e.target.value))}
-                       className="input-field mt-1" />
+                  onChange={e => updateField('bench_players', Number(e.target.value))}
+                  className="input-field mt-1" />
               </label>
             </div>
             <p className="text-xs text-gray-500">Starters + Bench must equal Max Players.</p>
@@ -157,38 +180,38 @@ export default function LeagueSettingsPage() {
             <label className="block">
               <span className="text-sm text-gray-700">Points per Kill</span>
               <input type="number" step="0.01" min={0} value={settings.points_per_kill}
-                     onChange={e => updateField('points_per_kill', Number(e.target.value))}
-                     className="input-field mt-1" />
+                onChange={e => updateField('points_per_kill', Number(e.target.value))}
+                className="input-field mt-1" />
             </label>
             <label className="block">
               <span className="text-sm text-gray-700">Points per Assist</span>
               <input type="number" step="0.01" min={0} value={settings.points_per_assist}
-                     onChange={e => updateField('points_per_assist', Number(e.target.value))}
-                     className="input-field mt-1" />
+                onChange={e => updateField('points_per_assist', Number(e.target.value))}
+                className="input-field mt-1" />
             </label>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={!!settings.use_best_2_of_3}
-                     onChange={e => updateField('use_best_2_of_3', e.target.checked)} />
+                onChange={e => updateField('use_best_2_of_3', e.target.checked)} />
               <span className="text-sm text-gray-700">Use Best 2 of 3 scoring</span>
             </label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="block">
                 <span className="block text-sm text-gray-700 leading-tight min-h-10" title="Exact Agent Match Multiplier">Exact Agent Match Multiplier</span>
                 <input type="number" step="0.01" min={0} value={settings.agent_exact_match_multiplier ?? 1.0}
-                       onChange={e => updateField('agent_exact_match_multiplier', Number(e.target.value))}
-                       className="input-field mt-1" />
+                  onChange={e => updateField('agent_exact_match_multiplier', Number(e.target.value))}
+                  className="input-field mt-1" />
               </label>
               <label className="block">
                 <span className="block text-sm text-gray-700 leading-tight min-h-10" title="Class Match Multiplier">Class Match Multiplier</span>
                 <input type="number" step="0.01" min={0} value={settings.agent_class_match_multiplier ?? 0.5}
-                       onChange={e => updateField('agent_class_match_multiplier', Number(e.target.value))}
-                       className="input-field mt-1" />
+                  onChange={e => updateField('agent_class_match_multiplier', Number(e.target.value))}
+                  className="input-field mt-1" />
               </label>
               <label className="block">
                 <span className="block text-sm text-gray-700 leading-tight min-h-10" title="Miss Multiplier">Miss Multiplier</span>
                 <input type="number" step="0.01" min={0} value={settings.agent_miss_multiplier ?? 0.25}
-                       onChange={e => updateField('agent_miss_multiplier', Number(e.target.value))}
-                       className="input-field mt-1" />
+                  onChange={e => updateField('agent_miss_multiplier', Number(e.target.value))}
+                  className="input-field mt-1" />
               </label>
             </div>
           </div>

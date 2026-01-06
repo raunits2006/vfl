@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api, ApiError } from '../../../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Users, RefreshCcw, Shield, Calendar, Crown, ListOrdered, Play, User, Settings } from 'lucide-react';
@@ -26,11 +27,13 @@ export default function LeagueDetailsPage() {
   const [myActivity, setMyActivity] = useState<Array<any>>([]);
   const [myTeamId, setMyTeamId] = useState<number | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const fetchDetails = async () => {
     try {
       const data = await api.getLeagueDetails(leagueId);
       setDetails((prev: any) => ({ ...(prev || {}), ...(data || {}) }));
+      setAccessDenied(false);
       try {
         const draft = await api.getDraftByLeague(leagueId);
         setDraftStatus(draft);
@@ -44,7 +47,7 @@ export default function LeagueDetailsPage() {
         ]);
         setWeeklyBoard(weekly);
         setSeasonBoard(season);
-      } catch {}
+      } catch { }
       try {
         const [trades, transactions] = await Promise.all([
           api.getLeagueTrades(leagueId),
@@ -70,7 +73,7 @@ export default function LeagueDetailsPage() {
         }
         feed.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setActivity(feed);
-      } catch {}
+      } catch { }
 
       try {
         if (user) {
@@ -82,7 +85,14 @@ export default function LeagueDetailsPage() {
           setMyActivity([]);
           setMyTeamId(null);
         }
-      } catch {}
+      } catch { }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        setAccessDenied(true);
+        return;
+      }
+      // For other errors, just log them
+      console.error('Error fetching league details:', e);
     } finally {
       setLoading(false);
     }
@@ -151,23 +161,23 @@ export default function LeagueDetailsPage() {
           const existing = await api.getDraftByLeague(leagueId);
           if (user) {
             try { await api.getUserTeamByLeague(leagueId, user.id); } catch {
-              try { await api.createTeam(leagueId, user.id, `${user.username}'s Team`); } catch {}
+              try { await api.createTeam(leagueId, user.id, `${user.username}'s Team`); } catch { }
             }
           }
           // Keep user on page; they can go to draft once IN_PROGRESS
           setDraftStatus(existing);
           return;
-        } catch {}
+        } catch { }
       }
-      
+
       // Handle specific error cases with user-friendly messages
       if (e?.message?.includes('Cannot start draft: no league members found')) {
-        showToast('Cannot start draft: No league members found. Please ensure at least one member has joined the league.', { 
+        showToast('Cannot start draft: No league members found. Please ensure at least one member has joined the league.', {
           type: 'error',
           title: 'Draft Error'
         });
       } else if (e?.message?.includes('League not found')) {
-        showToast('League not found. Please check the URL or contact support.', { 
+        showToast('League not found. Please check the URL or contact support.', {
           type: 'error',
           title: 'League Error'
         });
@@ -194,27 +204,27 @@ export default function LeagueDetailsPage() {
       // Set draft order using current display order (no randomize). This is kept as a fallback action.
       const result = await api.setDraftOrder(draftStatus.draft_id, memberIds, false);
       showToast('Draft order set successfully!', { type: 'success' });
-      
+
       router.push(`/leagues/${leagueId}/draft?draftId=${draftStatus.draft_id}`);
     } catch (e: any) {
       // Handle specific error cases with user-friendly messages
       if (e?.message?.includes('Only the league commissioner can set draft order')) {
-        showToast('Only the league commissioner can set draft order. Please contact your commissioner.', { 
+        showToast('Only the league commissioner can set draft order. Please contact your commissioner.', {
           type: 'error',
           title: 'Authorization Error'
         });
       } else if (e?.message?.includes('Draft not found')) {
-        showToast('Draft not found. Please check the URL or contact support.', { 
+        showToast('Draft not found. Please check the URL or contact support.', {
           type: 'error',
           title: 'Draft Error'
         });
       } else if (e?.message?.includes('Draft already started')) {
-        showToast('Draft has already started. Cannot modify draft order.', { 
+        showToast('Draft has already started. Cannot modify draft order.', {
           type: 'error',
           title: 'Draft Error'
         });
       } else if (e?.message?.includes('Draft order cannot be empty')) {
-        showToast('Cannot set empty draft order. Please ensure there are league members.', { 
+        showToast('Cannot set empty draft order. Please ensure there are league members.', {
           type: 'error',
           title: 'Draft Error'
         });
@@ -240,12 +250,12 @@ export default function LeagueDetailsPage() {
     try {
       const status = await api.getDraftByLeague(leagueId);
       if (user) {
-        try { 
-          await api.getUserTeamByLeague(leagueId, user.id); 
+        try {
+          await api.getUserTeamByLeague(leagueId, user.id);
         } catch {
-          try { 
-            await api.createTeam(leagueId, user.id, `${user.username}'s Team`); 
-          } catch {}
+          try {
+            await api.createTeam(leagueId, user.id, `${user.username}'s Team`);
+          } catch { }
         }
       }
       router.push(`/leagues/${leagueId}/draft?draftId=${status.draft_id}`);
@@ -254,7 +264,7 @@ export default function LeagueDetailsPage() {
     }
   };
 
-  {/* Modal for setting draft order */}
+  {/* Modal for setting draft order */ }
 
   const goToMyTeam = async () => {
     if (!user || !Number.isFinite(leagueId)) return;
@@ -269,6 +279,21 @@ export default function LeagueDetailsPage() {
   const goToSettings = () => {
     router.push(`/leagues/${leagueId}/settings`);
   };
+
+  if (accessDenied) {
+    return (
+      <div className="card text-center py-16">
+        <div className="mx-auto w-16 h-16 mb-4 rounded-full bg-red-100 flex items-center justify-center">
+          <Shield className="h-8 w-8 text-red-600" />
+        </div>
+        <h2 className="text-xl font-bold text-red-600 mb-2">Access Denied</h2>
+        <p className="text-gray-600 mb-6">You are not a member of this league.</p>
+        <Link href="/leagues" className="btn-primary">
+          Go to My Leagues
+        </Link>
+      </div>
+    );
+  }
 
   if (loading || !details) {
     return (
@@ -320,15 +345,14 @@ export default function LeagueDetailsPage() {
             <p className="text-gray-600">{details.description}</p>
           </div>
           <div className="flex items-center space-x-3">
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-              draftStatus?.status === 'IN_PROGRESS' 
-                ? 'bg-yellow-100 text-yellow-800'
-                : details.status === 'ACTIVE' 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-gray-100 text-gray-800'
-            }`}>
-              {draftStatus?.status === 'IN_PROGRESS' 
-                ? 'DRAFTING' 
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${draftStatus?.status === 'IN_PROGRESS'
+              ? 'bg-yellow-100 text-yellow-800'
+              : details.status === 'ACTIVE'
+                ? 'bg-green-100 text-green-800'
+                : 'bg-gray-100 text-gray-800'
+              }`}>
+              {draftStatus?.status === 'IN_PROGRESS'
+                ? 'DRAFTING'
                 : String(details.status).toUpperCase()
               }
             </span>
@@ -395,16 +419,16 @@ export default function LeagueDetailsPage() {
             <Calendar className="h-5 w-5 mr-2 text-valorant-600" /> Draft
           </h2>
           <div className="space-y-3">
-            <button 
-              onClick={startDraft} 
+            <button
+              onClick={startDraft}
               className="btn-primary w-full flex items-center justify-center"
               disabled={!!draftStatus && draftStatus.status !== 'PENDING'}
             >
               <Play className="h-4 w-4 mr-2" /> Start Draft
             </button>
             {draftStatus?.status === 'PENDING' && (
-              <button 
-                onClick={() => setShowOrderModal(true)} 
+              <button
+                onClick={() => setShowOrderModal(true)}
                 className="btn-secondary w-full flex items-center justify-center"
               >
                 <ListOrdered className="h-4 w-4 mr-2" /> Set Draft Order
@@ -421,40 +445,38 @@ export default function LeagueDetailsPage() {
               {myActivity.map((t: any) => {
                 const iAmSender = myTeamId && t.team1_id === myTeamId;
                 const iAmRecipient = myTeamId && t.team2_id === myTeamId;
-                
+
 
                 // Organize trade items by team
                 const team1Items = t.trade_items.filter((i: any) => i.team_id === t.team1_id);
                 const team2Items = t.trade_items.filter((i: any) => i.team_id === t.team2_id);
-                
+
                 return (
-                  <div key={t.id} className={`border-2 rounded-lg p-4 ${
-                    t.status === 'pending' 
-                      ? 'border-yellow-300 bg-yellow-50' 
-                      : t.status === 'accepted' 
-                        ? 'border-green-300 bg-green-50'
-                        : 'border-gray-300 bg-gray-50'
-                  }`}>
+                  <div key={t.id} className={`border-2 rounded-lg p-4 ${t.status === 'pending'
+                    ? 'border-yellow-300 bg-yellow-50'
+                    : t.status === 'accepted'
+                      ? 'border-green-300 bg-green-50'
+                      : 'border-gray-300 bg-gray-50'
+                    }`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <h3 className="font-medium text-gray-900">
                             Trade: {t.team1_name} ↔ {t.team2_name}
                           </h3>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            t.status === 'pending' 
-                              ? 'bg-yellow-200 text-yellow-800' 
-                              : t.status === 'accepted' 
-                                ? 'bg-green-200 text-green-800'
-                                : t.status === 'rejected'
-                                  ? 'bg-red-200 text-red-800'
-                                  : 'bg-gray-200 text-gray-800'
-                          }`}>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${t.status === 'pending'
+                            ? 'bg-yellow-200 text-yellow-800'
+                            : t.status === 'accepted'
+                              ? 'bg-green-200 text-green-800'
+                              : t.status === 'rejected'
+                                ? 'bg-red-200 text-red-800'
+                                : 'bg-gray-200 text-gray-800'
+                            }`}>
                             {t.status}
                           </span>
 
                         </div>
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                           <div className="bg-white p-3 rounded border">
                             <div className="font-medium text-gray-700 mb-1">{t.team1_name} offers:</div>
@@ -469,7 +491,7 @@ export default function LeagueDetailsPage() {
                             </div>
                           </div>
                         </div>
-                        
+
                         <div className="mt-2 text-xs text-gray-500">
                           Proposed: {new Date(t.proposed_at).toLocaleDateString()} at {new Date(t.proposed_at).toLocaleTimeString()}
                           {t.responded_at && (
@@ -477,36 +499,36 @@ export default function LeagueDetailsPage() {
                           )}
                         </div>
                       </div>
-                      
+
                       {t.status === 'pending' && (
                         <div className="ml-4 flex flex-col gap-2 min-w-max">
                           {/* Show for recipients */}
                           {(iAmRecipient || (!iAmSender && !iAmRecipient)) && (
                             <>
-                              <button 
-                                onClick={async () => { 
-                                  try { 
-                                    await api.acceptTrade(t.id); 
-                                    showToast('Trade accepted successfully!', { type: 'success' }); 
-                                    fetchDetails(); 
-                                  } catch (e: any) { 
-                                    showToast(e?.message || 'Failed to accept trade', { type: 'error' }); 
-                                  } 
-                                }} 
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.acceptTrade(t.id);
+                                    showToast('Trade accepted successfully!', { type: 'success' });
+                                    fetchDetails();
+                                  } catch (e: any) {
+                                    showToast(e?.message || 'Failed to accept trade', { type: 'error' });
+                                  }
+                                }}
                                 className="btn-primary btn-sm hover:scale-105 transition-transform"
                               >
                                 ✓ Accept Trade
                               </button>
-                              <button 
-                                onClick={async () => { 
-                                  try { 
-                                    await api.rejectTrade(t.id); 
-                                    showToast('Trade rejected', { type: 'success' }); 
-                                    fetchDetails(); 
-                                  } catch (e: any) { 
-                                    showToast(e?.message || 'Failed to reject trade', { type: 'error' }); 
-                                  } 
-                                }} 
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.rejectTrade(t.id);
+                                    showToast('Trade rejected', { type: 'success' });
+                                    fetchDetails();
+                                  } catch (e: any) {
+                                    showToast(e?.message || 'Failed to reject trade', { type: 'error' });
+                                  }
+                                }}
                                 className="btn-secondary btn-sm hover:scale-105 transition-transform"
                               >
                                 ✗ Reject Trade
@@ -515,16 +537,16 @@ export default function LeagueDetailsPage() {
                           )}
                           {/* Show for senders */}
                           {iAmSender && (
-                            <button 
-                              onClick={async () => { 
-                                try { 
-                                  await api.cancelTrade(t.id); 
-                                  showToast('Trade cancelled', { type: 'success' }); 
-                                  fetchDetails(); 
-                                } catch (e: any) { 
-                                  showToast(e?.message || 'Failed to cancel trade', { type: 'error' }); 
-                                } 
-                              }} 
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await api.cancelTrade(t.id);
+                                  showToast('Trade cancelled', { type: 'success' });
+                                  fetchDetails();
+                                } catch (e: any) {
+                                  showToast(e?.message || 'Failed to cancel trade', { type: 'error' });
+                                }
+                              }}
                               className="btn-secondary btn-sm hover:scale-105 transition-transform"
                             >
                               🚫 Cancel Trade

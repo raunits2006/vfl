@@ -25,9 +25,11 @@ export default function Navbar() {
               <Link href="/" className="text-white hover:text-valorant-200 px-3 py-2 rounded-md text-sm font-medium">
                 Home
               </Link>
-              <Link href="/leagues" className="text-white hover:text-valorant-200 px-3 py-2 rounded-md text-sm font-medium">
-                Leagues
-              </Link>
+              {user && (
+                <Link href="/leagues" className="text-white hover:text-valorant-200 px-3 py-2 rounded-md text-sm font-medium">
+                  Leagues
+                </Link>
+              )}
               <Link href="/matches" className="text-white hover:text-valorant-200 px-3 py-2 rounded-md text-sm font-medium">
                 Matches
               </Link>
@@ -81,22 +83,24 @@ export default function Navbar() {
         {showMobileMenu && (
           <div className="md:hidden">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-valorant-700">
-              <Link 
-                href="/" 
+              <Link
+                href="/"
                 className="text-white hover:text-valorant-200 block px-3 py-2 rounded-md text-base font-medium"
                 onClick={() => setShowMobileMenu(false)}
               >
                 Home
               </Link>
-              <Link 
-                href="/leagues" 
-                className="text-white hover:text-valorant-200 block px-3 py-2 rounded-md text-base font-medium"
-                onClick={() => setShowMobileMenu(false)}
-              >
-                Leagues
-              </Link>
-              <Link 
-                href="/matches" 
+              {user && (
+                <Link
+                  href="/leagues"
+                  className="text-white hover:text-valorant-200 block px-3 py-2 rounded-md text-base font-medium"
+                  onClick={() => setShowMobileMenu(false)}
+                >
+                  Leagues
+                </Link>
+              )}
+              <Link
+                href="/matches"
                 className="text-white hover:text-valorant-200 block px-3 py-2 rounded-md text-base font-medium"
                 onClick={() => setShowMobileMenu(false)}
               >

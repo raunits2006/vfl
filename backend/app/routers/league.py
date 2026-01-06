@@ -205,14 +205,31 @@ def get_leagues(
 @router.get("/{league_id}", response_model=LeagueResponse)
 def get_league(
     league_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Get a specific league by ID"""
+    """Get a specific league by ID.
+    
+    Returns 403 for both non-existent leagues and non-member access
+    to prevent league enumeration attacks.
+    """
     league = session.exec(select(League).where(League.id == league_id)).first()
-    if not league:
+    
+    # Check membership (also handles non-existent leagues)
+    membership = None
+    if league:
+        membership = session.exec(
+            select(LeagueMember).where(
+                LeagueMember.league_id == league_id,
+                LeagueMember.user_id == current_user.id
+            )
+        ).first()
+    
+    # Return same error for both cases to prevent information leakage
+    if not league or not membership:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="League not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
         )
     
     # Count members
@@ -234,12 +251,32 @@ def get_league(
 @router.get("/{league_id}/details", response_model=LeagueDetailResponse)
 def get_league_details(
     league_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Get league details including members and join PIN."""
+    """Get league details including members and join PIN.
+    
+    Returns 403 for both non-existent leagues and non-member access
+    to prevent league enumeration attacks.
+    """
     league = session.exec(select(League).where(League.id == league_id)).first()
-    if not league:
-        raise HTTPException(status_code=404, detail="League not found")
+    
+    # Check membership (also handles non-existent leagues)
+    membership = None
+    if league:
+        membership = session.exec(
+            select(LeagueMember).where(
+                LeagueMember.league_id == league_id,
+                LeagueMember.user_id == current_user.id
+            )
+        ).first()
+    
+    # Return same error for both cases to prevent information leakage
+    if not league or not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
 
     members = session.exec(select(LeagueMember).where(LeagueMember.league_id == league_id)).all()
     member_infos: List[LeagueMemberInfo] = []
@@ -267,12 +304,32 @@ def get_league_details(
 @router.get("/{league_id}/settings", response_model=LeagueSettingsResponse)
 def get_league_settings(
     league_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Get league settings (roster, scoring, draft type)."""
+    """Get league settings (roster, scoring, draft type).
+    
+    Returns 403 for both non-existent leagues and non-member access
+    to prevent league enumeration attacks.
+    """
     league = session.exec(select(League).where(League.id == league_id)).first()
-    if not league:
-        raise HTTPException(status_code=404, detail="League not found")
+    
+    # Check membership (also handles non-existent leagues)
+    membership = None
+    if league:
+        membership = session.exec(
+            select(LeagueMember).where(
+                LeagueMember.league_id == league_id,
+                LeagueMember.user_id == current_user.id
+            )
+        ).first()
+    
+    # Return same error for both cases to prevent information leakage
+    if not league or not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
 
     settings = session.exec(select(LeagueSettings).where(LeagueSettings.league_id == league_id)).first()
     if not settings:
@@ -305,20 +362,22 @@ def update_league_settings(
     """Update league settings. Only the league commissioner may update settings.
 
     If roster sizes are updated, enforces that starting_players + bench_players equals max_players.
+    Returns 403 for both non-existent leagues and non-commissioner access.
     """
     league = session.exec(select(League).where(League.id == league_id)).first()
-    if not league:
-        raise HTTPException(status_code=404, detail="League not found")
-
+    
     # Verify current user is the commissioner of this league
-    membership = session.exec(
-        select(LeagueMember).where(
-            LeagueMember.league_id == league_id,
-            LeagueMember.user_id == current_user.id
-        )
-    ).first()
-    if not membership or not membership.is_commissioner:
-        raise HTTPException(status_code=403, detail="Only the league commissioner can update settings")
+    membership = None
+    if league:
+        membership = session.exec(
+            select(LeagueMember).where(
+                LeagueMember.league_id == league_id,
+                LeagueMember.user_id == current_user.id
+            )
+        ).first()
+    
+    if not league or not membership or not membership.is_commissioner:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     settings = session.exec(select(LeagueSettings).where(LeagueSettings.league_id == league_id)).first()
     if not settings:
@@ -400,20 +459,22 @@ def set_commissioner_status(
     """Assign or remove commissioner status for a league member. Only current commissioners may change roles.
 
     Prevent removing the last remaining commissioner.
+    Returns 403 for both non-existent leagues and non-commissioner access.
     """
     league = session.exec(select(League).where(League.id == league_id)).first()
-    if not league:
-        raise HTTPException(status_code=404, detail="League not found")
-
+    
     # Requester must be a commissioner
-    requester_membership = session.exec(
-        select(LeagueMember).where(
-            LeagueMember.league_id == league_id,
-            LeagueMember.user_id == current_user.id
-        )
-    ).first()
-    if not requester_membership or not requester_membership.is_commissioner:
-        raise HTTPException(status_code=403, detail="Only commissioners can change roles")
+    requester_membership = None
+    if league:
+        requester_membership = session.exec(
+            select(LeagueMember).where(
+                LeagueMember.league_id == league_id,
+                LeagueMember.user_id == current_user.id
+            )
+        ).first()
+    
+    if not league or not requester_membership or not requester_membership.is_commissioner:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     target_membership = session.exec(
         select(LeagueMember).where(
@@ -446,20 +507,24 @@ def regenerate_join_pin(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Generate a new 6-digit join PIN for the league."""
+    """Generate a new 6-digit join PIN for the league.
+    
+    Returns 403 for both non-existent leagues and non-commissioner access.
+    """
     league = session.exec(select(League).where(League.id == league_id)).first()
-    if not league:
-        raise HTTPException(status_code=404, detail="League not found")
     
     # Verify current user is a commissioner
-    membership = session.exec(
-        select(LeagueMember).where(
-            LeagueMember.league_id == league_id,
-            LeagueMember.user_id == current_user.id
-        )
-    ).first()
-    if not membership or not membership.is_commissioner:
-        raise HTTPException(status_code=403, detail="Only commissioners can regenerate PINs")
+    membership = None
+    if league:
+        membership = session.exec(
+            select(LeagueMember).where(
+                LeagueMember.league_id == league_id,
+                LeagueMember.user_id == current_user.id
+            )
+        ).first()
+    
+    if not league or not membership or not membership.is_commissioner:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     league.join_pin = ''.join(secrets.choice(string.digits) for _ in range(6))
     session.add(league)
