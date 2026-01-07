@@ -11,6 +11,7 @@ from app.models.user_model import User
 from app.utils.draft_utils import check_team_lock_status
 from app.utils.deps import enforce_team_unlocked
 from app.utils.agents import get_valid_agents
+from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -54,6 +55,9 @@ class AgentPredictionResponse(BaseModel):
     player_name: str
     picks: List[str]
     updated_at: str
+
+class TeamRenameRequest(BaseModel):
+    name: str
 
 @router.get("/user-team", response_model=TeamResponse)
 def get_user_team_by_league(
@@ -231,6 +235,59 @@ def get_team(
         select(TeamPlayer).where(TeamPlayer.team_id == team_id)
     ).all()
     
+    starting_count = sum(1 for p in players if p.is_starting)
+    bench_count = sum(1 for p in players if not p.is_starting)
+    
+    return TeamResponse(
+        id=team.id,
+        league_id=team.league_id,
+        user_id=team.user_id,
+        name=team.name,
+        created_at=team.created_at.isoformat(),
+        player_count=len(players),
+        starting_players=starting_count,
+        bench_players=bench_count
+    )
+
+@router.patch("/{team_id}/rename", response_model=TeamResponse)
+def rename_team(
+    team_id: int,
+    req: TeamRenameRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Rename a team. Only the team owner can rename their team."""
+    team = session.exec(select(Team).where(Team.id == team_id)).first()
+    if not team:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found"
+        )
+    
+    # Verify ownership
+    if team.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only rename your own team"
+        )
+    
+    # Validate name is not empty
+    if not req.name or not req.name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Team name cannot be empty"
+        )
+    
+    # Update the team name
+    team.name = req.name.strip()
+    session.add(team)
+    session.commit()
+    session.refresh(team)
+    
+    # Get player counts for response
+    players = session.exec(
+        select(TeamPlayer).where(TeamPlayer.team_id == team_id)
+    ).all()
     starting_count = sum(1 for p in players if p.is_starting)
     bench_count = sum(1 for p in players if not p.is_starting)
     

@@ -25,7 +25,7 @@ export class ApiError extends Error {
 }
 
 export async function authenticatedFetch(
-  url: string, 
+  url: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const token = localStorage.getItem('token');
@@ -116,7 +116,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ user_ids: userIds, randomize }),
     }),
-  makeDraftPick: (draftId: number, teamId: number, playerName: string) => 
+  makeDraftPick: (draftId: number, teamId: number, playerName: string) =>
     apiRequest<DraftPick>(`/api/drafts/${draftId}/pick`, {
       method: 'POST',
       body: JSON.stringify({ team_id: teamId, player_name: playerName }),
@@ -154,6 +154,10 @@ export const api = {
   setAgentPrediction: (teamId: number, playerName: string, picks: string[]) => apiRequest<{ team_id: number; player_name: string; picks: string[]; updated_at: string }>(`/api/teams/${teamId}/agent-predictions`, {
     method: 'POST',
     body: JSON.stringify({ player_name: playerName, picks }),
+  }),
+  renameTeam: (teamId: number, name: string) => apiRequest<TeamSummary>(`/api/teams/${teamId}/rename`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
   }),
 
   // Fantasy Scores
