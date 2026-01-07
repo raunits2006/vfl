@@ -27,7 +27,7 @@ class TradeStatus(str, Enum):
 
 class League(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(unique=True)
+    name: str
     description: Optional[str] = None
     max_teams: int = Field(default=8)
     status: LeagueStatus = Field(default=LeagueStatus.DRAFTING)

@@ -5,10 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, ApiError } from '../../../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
-import { Users, RefreshCcw, Shield, Calendar, Crown, ListOrdered, Play, User, Settings } from 'lucide-react';
+import { Users, RefreshCcw, Shield, Calendar, Crown, ListOrdered, Play, User, Settings, Eye, X } from 'lucide-react';
 import SetDraftOrderModal from '../../../components/SetDraftOrderModal';
 import { useToast } from '../../../components/ToastProvider';
-import type { LeagueLeaderboardEnvelope } from '../../../types/api';
+import type { LeagueLeaderboardEnvelope, TeamPlayer } from '../../../types/api';
 
 export default function LeagueDetailsPage() {
   const params = useParams<{ id: string }>();
@@ -28,6 +28,12 @@ export default function LeagueDetailsPage() {
   const [myTeamId, setMyTeamId] = useState<number | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+
+  // View Team Modal state
+  const [viewTeamModalOpen, setViewTeamModalOpen] = useState(false);
+  const [viewingTeam, setViewingTeam] = useState<{ name: string; ownerUsername: string; userId: number } | null>(null);
+  const [viewingTeamPlayers, setViewingTeamPlayers] = useState<TeamPlayer[]>([]);
+  const [viewTeamLoading, setViewTeamLoading] = useState(false);
 
   const fetchDetails = async () => {
     try {
@@ -385,14 +391,38 @@ export default function LeagueDetailsPage() {
           </h2>
           <div className="space-y-2">
             {details.members.map((m: any) => (
-              <div key={m.user_id} className="flex justify-between text-sm">
+              <div key={m.user_id} className="flex justify-between items-center text-sm">
                 <div className="flex items-center">
                   <span className="font-medium">{m.username}</span>
                   {m.is_commissioner && (
                     <span className="ml-2 inline-flex items-center text-xs text-valorant-600"><Crown className="h-3 w-3 mr-1" /> Commissioner</span>
                   )}
                 </div>
-                <span className="text-gray-500">{new Date(m.joined_at).toLocaleDateString()}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setViewTeamLoading(true);
+                      setViewTeamModalOpen(true);
+                      setViewingTeam({ name: '', ownerUsername: m.username, userId: m.user_id });
+                      try {
+                        const team = await api.getUserTeamByLeague(leagueId, m.user_id);
+                        setViewingTeam({ name: team.name, ownerUsername: m.username, userId: m.user_id });
+                        const players = await api.getTeamPlayers(team.id);
+                        setViewingTeamPlayers(players);
+                      } catch (e) {
+                        showToast('Could not load team', { type: 'error' });
+                        setViewTeamModalOpen(false);
+                      } finally {
+                        setViewTeamLoading(false);
+                      }
+                    }}
+                    className="p-1 text-gray-400 hover:text-valorant-600 hover:bg-gray-100 rounded transition-colors"
+                    title="View Team"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <span className="text-gray-500">{new Date(m.joined_at).toLocaleDateString()}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -602,6 +632,70 @@ export default function LeagueDetailsPage() {
         members={(details?.members || []).map((m: any) => ({ user_id: m.user_id, username: m.username }))}
         onSubmit={handleSaveOrder}
       />
+
+      {/* Modal: View Team */}
+      {viewTeamModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setViewTeamModalOpen(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold">{viewingTeam?.name || 'Loading...'}</h3>
+                <p className="text-sm text-gray-500">Owner: {viewingTeam?.ownerUsername}</p>
+              </div>
+              <button
+                onClick={() => setViewTeamModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {viewTeamLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-valorant-600"></div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium text-green-600 mb-2 flex items-center">
+                      <Users className="h-4 w-4 mr-1" /> Starters
+                    </h4>
+                    {viewingTeamPlayers.filter(p => p.is_starting).length === 0 ? (
+                      <p className="text-sm text-gray-500">No starters</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {viewingTeamPlayers.filter(p => p.is_starting).map(p => (
+                          <li key={p.id} className="text-sm flex justify-between py-1 px-2 bg-green-50 rounded">
+                            <span className="font-medium">{p.player_name}</span>
+                            <span className="text-gray-500">{p.team}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-blue-600 mb-2 flex items-center">
+                      <Users className="h-4 w-4 mr-1" /> Bench
+                    </h4>
+                    {viewingTeamPlayers.filter(p => !p.is_starting).length === 0 ? (
+                      <p className="text-sm text-gray-500">No bench players</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {viewingTeamPlayers.filter(p => !p.is_starting).map(p => (
+                          <li key={p.id} className="text-sm flex justify-between py-1 px-2 bg-blue-50 rounded">
+                            <span className="font-medium">{p.player_name}</span>
+                            <span className="text-gray-500">{p.team}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

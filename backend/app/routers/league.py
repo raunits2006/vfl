@@ -113,14 +113,6 @@ def create_league(
     session: Session = Depends(get_session)
 ):
     """Create a new league"""
-    # Check if league name already exists
-    existing_league = session.exec(select(League).where(League.name == league_data.name)).first()
-    if existing_league:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="League name already exists"
-        )
-    
     # Create league
     # Generate a 6-digit PIN code
     pin = ''.join(secrets.choice(string.digits) for _ in range(6))
