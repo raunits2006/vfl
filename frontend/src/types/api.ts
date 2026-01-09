@@ -66,6 +66,15 @@ export interface TeamPlayer {
   added_at: string;
 }
 
+export interface TeamPlayerWithScore {
+  player_name: string;
+  team: string;  // Valorant team
+  is_starting: boolean;
+  total_points: number;
+  agent_predictions: string[];  // 3 agent names or empty
+  agent_classes: string[];      // corresponding classes
+}
+
 export interface FantasyScore {
   player_name: string;
   event_id: number;
@@ -150,4 +159,5 @@ export interface LeagueSettings {
   agent_exact_match_multiplier: number;
   agent_class_match_multiplier: number;
   agent_miss_multiplier: number;
+  max_duelist_agent_players: number;
 }

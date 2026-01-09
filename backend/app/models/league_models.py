@@ -71,6 +71,7 @@ class LeagueSettings(SQLModel, table=True):
     agent_exact_match_multiplier: float = Field(default=1.0, description="Multiplier if agent exact picks match (full points)")
     agent_class_match_multiplier: float = Field(default=0.5, description="Multiplier if agent class matches any picked class")
     agent_miss_multiplier: float = Field(default=0.25, description="Multiplier if no picks/classes match")
+    max_duelist_agent_players: int = Field(default=2, description="Maximum number of players that can have duelist agents in predictions")
     
     # Draft settings
     draft_type: str = Field(default="snake")  # snake, auction, etc.

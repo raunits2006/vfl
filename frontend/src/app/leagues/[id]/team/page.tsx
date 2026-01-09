@@ -2,11 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ChevronUp, ChevronDown, Users, X, Edit2, Check } from 'lucide-react';
+import { Users, X, Edit2, Check } from 'lucide-react';
 import { api, apiRequest } from '../../../../utils/api';
 import { useToast } from '../../../../components/ToastProvider';
 import { useAuth } from '../../../../contexts/AuthContext';
-import { TeamSummary, TeamPlayer, FreeAgent } from '../../../../types/api';
+import SidePanel from '../../../../components/SidePanel';
+import AgentSelectionPanel from '../../../../components/AgentSelectionPanel';
+import { TeamSummary, TeamPlayer, FreeAgent, TeamPlayerWithScore } from '../../../../types/api';
+
+// Agent to class mapping for display
+const AGENT_TO_CLASS: Record<string, string> = {
+  'Jett': 'Duelist', 'Phoenix': 'Duelist', 'Neon': 'Duelist', 'Raze': 'Duelist',
+  'Reyna': 'Duelist', 'Yoru': 'Duelist', 'Iso': 'Duelist', 'Waylay': 'Duelist',
+  'Astra': 'Controller', 'Brimstone': 'Controller', 'Omen': 'Controller',
+  'Viper': 'Controller', 'Harbor': 'Controller', 'Clove': 'Controller',
+  'Breach': 'Initiator', 'Gekko': 'Initiator', 'KAY/O': 'Initiator',
+  'Skye': 'Initiator', 'Sova': 'Initiator', 'Fade': 'Initiator', 'Tejo': 'Initiator',
+  'Chamber': 'Sentinel', 'Cypher': 'Sentinel', 'Deadlock': 'Sentinel',
+  'Killjoy': 'Sentinel', 'Sage': 'Sentinel', 'Vyse': 'Sentinel',
+};
 
 export default function MyTeamPage() {
   const params = useParams<{ id: string }>();
@@ -26,19 +40,22 @@ export default function MyTeamPage() {
 
   const [team, setTeam] = useState<TeamSummary | null>(null);
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
+  const [playerScores, setPlayerScores] = useState<TeamPlayerWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [lockMessage, setLockMessage] = useState<string>('');
   const [draftCompleted, setDraftCompleted] = useState<boolean>(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
-  const [predictions, setPredictions] = useState<Record<string, string[]>>({});
-  const AGENT_GROUPS: Record<string, string[]> = {
-    Duelists: ['Jett', 'Phoenix', 'Neon', 'Raze', 'Reyna', 'Yoru', 'Iso', 'Waylay'],
-    Controllers: ['Astra', 'Brimstone', 'Omen', 'Viper', 'Harbor', 'Clove'],
-    Initiators: ['Breach', 'Gekko', 'KAY/O', 'Skye', 'Sova', 'Fade', 'Tejo'],
-    Sentinels: ['Chamber', 'Cypher', 'Deadlock', 'Killjoy', 'Sage', 'Vyse'],
-  };
+  const [maxStarters, setMaxStarters] = useState<number>(5);
+
+  // Swap modal state
+  const [swapModalOpen, setSwapModalOpen] = useState(false);
+  const [playerToPromote, setPlayerToPromote] = useState<string | null>(null);
+
+  // Agent selection panel state
+  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+  const [selectedPlayerForAgents, setSelectedPlayerForAgents] = useState<TeamPlayerWithScore | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -62,19 +79,29 @@ export default function MyTeamPage() {
           }
           setDraftCompleted(draft.status === 'COMPLETED');
         } catch { }
+
+        // Get league settings for max starters
+        try {
+          const settings = await api.getLeagueSettings(leagueId);
+          setMaxStarters(settings.starting_players);
+        } catch { }
+
         const t = await api.getUserTeamByLeague(leagueId, user.id);
         if (!active) return;
         setTeam(t);
+
+        // Get player list (for trades/free agents compatibility)
         const list = await api.getTeamPlayers(t.id);
         if (!active) return;
         setPlayers(list);
+
+        // Get player scores with agent predictions
         try {
-          const preds = await api.getAgentPredictions(t.id);
+          const scores = await api.getTeamPlayerScores(t.id);
           if (!active) return;
-          const map: Record<string, string[]> = {};
-          for (const p of preds) map[p.player_name] = p.picks;
-          setPredictions(map);
+          setPlayerScores(scores);
         } catch { }
+
         // Lock status
         const lock = await apiRequest<{ is_locked: boolean; message: string }>(`/api/teams/${t.id}/lock-status`);
         if (!active) return;
@@ -104,9 +131,6 @@ export default function MyTeamPage() {
       try {
         // Reuse league details to list member teams
         const details = await api.getLeagueDetails(leagueId);
-        // Each member may have a team; fetch teams by user to list
-        // Simplify: build team list from current roster owners we have locally
-        // Better: dedicated endpoint. For now, fetch each user's team.
         const teams: Array<{ id: number; name: string; user_id: number }> = [];
         for (const m of details.members || []) {
           try {
@@ -132,36 +156,55 @@ export default function MyTeamPage() {
     loadReceivingTeamPlayers();
   }, [receivingTeamId]);
 
-  const starters = useMemo(() => players.filter(p => p.is_starting), [players]);
-  const bench = useMemo(() => players.filter(p => !p.is_starting), [players]);
+  // Compute starters and bench from playerScores
+  const starters = useMemo(() => playerScores.filter(p => p.is_starting), [playerScores]);
+  const bench = useMemo(() => playerScores.filter(p => !p.is_starting), [playerScores]);
+  const startersAtMax = starters.length >= maxStarters;
 
-  const savePrediction = async (playerName: string) => {
+  const refreshPlayerData = async () => {
+    if (!team) return;
+    try {
+      const list = await api.getTeamPlayers(team.id);
+      setPlayers(list);
+      const scores = await api.getTeamPlayerScores(team.id);
+      setPlayerScores(scores);
+    } catch { }
+  };
+
+  const handleTogglePlayer = async (player: TeamPlayerWithScore) => {
     if (!team || isLocked) return;
-    const picks = predictions[playerName] || [];
-    if (picks.length !== 3) {
-      showToast('Pick exactly 3 agents', { type: 'warning' });
+
+    // If promoting from bench and starters are at max, open swap modal
+    if (!player.is_starting && startersAtMax) {
+      setPlayerToPromote(player.player_name);
+      setSwapModalOpen(true);
       return;
     }
+
     try {
-      await api.setAgentPrediction(team.id, playerName, picks);
-      showToast('Picks saved', { type: 'success' });
-    } catch (e: any) {
-      showToast(e?.message || 'Failed to save', { type: 'error' });
+      await api.togglePlayerStartingStatus(team.id, player.player_name);
+      await refreshPlayerData();
+    } catch (error) {
+      console.error('Error toggling player status:', error);
+      const message = (error as any)?.message || 'Failed to update player status. Please try again.';
+      showToast(message, { type: 'error' });
     }
   };
 
-  const togglePick = (playerName: string, agent: string) => {
-    setPredictions(prev => {
-      const current = prev[playerName] ? [...prev[playerName]] : [];
-      const idx = current.indexOf(agent);
-      if (idx >= 0) {
-        current.splice(idx, 1);
-      } else {
-        if (current.length >= 3) return prev; // enforce max 3
-        current.push(agent);
-      }
-      return { ...prev, [playerName]: current };
-    });
+  const handleSwapPlayers = async (starterToDemote: string) => {
+    if (!team || !playerToPromote) return;
+
+    try {
+      await api.swapPlayers(team.id, playerToPromote, starterToDemote);
+      showToast(`Swapped ${playerToPromote} with ${starterToDemote}`, { type: 'success' });
+      await refreshPlayerData();
+      setSwapModalOpen(false);
+      setPlayerToPromote(null);
+    } catch (error) {
+      console.error('Error swapping players:', error);
+      const message = (error as any)?.message || 'Failed to swap players. Please try again.';
+      showToast(message, { type: 'error' });
+    }
   };
 
   const performFreeAgentSwap = async () => {
@@ -173,9 +216,7 @@ export default function MyTeamPage() {
     try {
       const res = await api.swapFreeAgent(team.league_id, team.id, dropSelection, addSelection);
       showToast(res.message, { type: 'success' });
-      // Refresh players and pool
-      const list = await api.getTeamPlayers(team.id);
-      setPlayers(list);
+      await refreshPlayerData();
       const pool = await api.getFreeAgentPool(team.league_id);
       setFreeAgentPool(pool);
       setDropSelection(null);
@@ -200,22 +241,94 @@ export default function MyTeamPage() {
     }
   };
 
-  const handleTogglePlayer = async (player: TeamPlayer) => {
-    if (!team || isLocked) return;
-
-    try {
-      const updatedPlayer = await api.togglePlayerStartingStatus(team.id, player.player_name);
-      // Update the local players array with the new status
-      setPlayers(prevPlayers =>
-        prevPlayers.map(p =>
-          p.id === player.id ? { ...p, is_starting: updatedPlayer.is_starting } : p
-        )
+  // Agent display component
+  const AgentSlot = ({ agentName, agentClass }: { agentName?: string; agentClass?: string }) => {
+    if (!agentName) {
+      return (
+        <div className="text-center px-2 py-1">
+          <div className="text-sm text-gray-400 italic">No Agent</div>
+          <div className="text-xs text-gray-500">Selected</div>
+        </div>
       );
-    } catch (error) {
-      console.error('Error toggling player status:', error);
-      const message = (error as any)?.message || 'Failed to update player status. Please try again.';
-      showToast(message, { type: 'error' });
     }
+    return (
+      <div className="text-center px-2 py-1">
+        <div className="text-sm font-medium">{agentName}</div>
+        <div className="text-xs text-gray-500">{agentClass || AGENT_TO_CLASS[agentName] || 'Unknown'}</div>
+      </div>
+    );
+  };
+
+  // Player row component
+  const PlayerRow = ({ player }: { player: TeamPlayerWithScore }) => {
+    const hasAgents = player.agent_predictions.length > 0;
+
+    return (
+      <tr className="border-b border-gray-700/50 hover:bg-gray-800/30">
+        {/* Player Name & Team */}
+        <td className="py-3 px-4">
+          <div className="font-medium">{player.player_name}</div>
+          <div className="text-sm text-gray-500">{player.team}</div>
+        </td>
+
+        {/* Action Button */}
+        <td className="py-3 px-2">
+          {!isLocked && (
+            <button
+              onClick={() => handleTogglePlayer(player)}
+              className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${player.is_starting
+                ? 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                : 'bg-green-100 hover:bg-green-200 text-green-700'
+                }`}
+            >
+              {player.is_starting ? 'Bench' : 'Start'}
+            </button>
+          )}
+        </td>
+
+        {/* Agent Slots */}
+        <td className="py-3 px-2">
+          <AgentSlot
+            agentName={player.agent_predictions[0]}
+            agentClass={player.agent_classes[0]}
+          />
+        </td>
+        <td className="py-3 px-2">
+          <AgentSlot
+            agentName={player.agent_predictions[1]}
+            agentClass={player.agent_classes[1]}
+          />
+        </td>
+        <td className="py-3 px-2">
+          <AgentSlot
+            agentName={player.agent_predictions[2]}
+            agentClass={player.agent_classes[2]}
+          />
+        </td>
+
+        {/* Modify/Select Agents Button */}
+        <td className="py-3 px-2">
+          <button
+            onClick={() => {
+              setSelectedPlayerForAgents(player);
+              setAgentPanelOpen(true);
+            }}
+            disabled={isLocked}
+            className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${isLocked
+              ? 'bg-valorant-600/20 text-valorant-400 cursor-not-allowed opacity-60'
+              : 'bg-valorant-600/30 hover:bg-valorant-600/50 text-valorant-400'
+              }`}
+          >
+            {hasAgents ? 'Modify' : 'Select'}
+          </button>
+        </td>
+
+        {/* Total Points */}
+        <td className="py-3 px-4 text-right">
+          <span className="font-semibold text-lg">{player.total_points.toFixed(1)}</span>
+        </td>
+      </tr>
+    );
   };
 
   if (loading) {
@@ -237,6 +350,7 @@ export default function MyTeamPage() {
 
   return (
     <div className="space-y-6">
+      {/* Team Header */}
       <div className="card">
         <div className="flex items-center justify-between">
           <div>
@@ -300,138 +414,112 @@ export default function MyTeamPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
-            <Users className="h-5 w-5 mr-2 text-green-600" />
-            Starters ({starters.length})
-          </h3>
-          {starters.length === 0 ? (
-            <p className="text-gray-600">No starters set.</p>
-          ) : (
-            <ul className="divide-y divide-gray-800/50">
-              {starters.map(p => (
-                <li key={p.id} className="py-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{p.player_name}</div>
-                    <div className="text-sm text-gray-500">{p.team}</div>
-                  </div>
-                  {!isLocked && (
-                    <button
-                      onClick={() => handleTogglePlayer(p)}
-                      className="flex items-center px-2 py-1 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-                      title="Move to bench"
-                    >
-                      <ChevronDown className="h-4 w-4 mr-1" />
-                      Bench
-                    </button>
-                  )}
-                  <div className="mt-3">
-                    <div className="text-xs text-gray-600 mb-1">Pick 3 agents (full points if 2 of 3 correct):</div>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {(predictions[p.player_name] || []).map(a => (
-                        <span key={a} className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-valorant-600 text-white">
-                          {a}
-                          {!isLocked && (
-                            <button onClick={() => togglePick(p.player_name, a)} className="opacity-80 hover:opacity-100">
-                              <X className="h-3 w-3" />
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                      {Array.from({ length: Math.max(0, 3 - (predictions[p.player_name]?.length || 0)) }).map((_, idx) => (
-                        <span key={idx} className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-500">Pick agent</span>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                      {Object.entries(AGENT_GROUPS).map(([group, agents]) => {
-                        const picks = predictions[p.player_name] || [];
-                        const canAdd = picks.length < 3;
-                        return (
-                          <div key={group} className="border border-gray-100 rounded-md p-2">
-                            <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">{group}</div>
-                            <div className="flex flex-wrap gap-2">
-                              {agents.map(a => {
-                                const selected = picks.includes(a);
-                                const disabled = isLocked || (!selected && !canAdd);
-                                return (
-                                  <button
-                                    key={a}
-                                    onClick={() => togglePick(p.player_name, a)}
-                                    disabled={disabled}
-                                    className={`px-2 py-1 text-xs rounded-full border transition-colors ${selected
-                                      ? 'bg-valorant-600 text-white border-valorant-600'
-                                      : disabled
-                                        ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
-                                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                                      }`}
-                                  >
-                                    {a}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                      <span>Half points on class match; otherwise 0.25x.</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setPredictions(prev => ({ ...prev, [p.player_name]: [] }))}
-                          disabled={isLocked}
-                          className="px-3 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
-                        >
-                          Clear
-                        </button>
-                        <button
-                          onClick={() => savePrediction(p.player_name)}
-                          disabled={isLocked}
-                          className="px-3 py-1 rounded bg-gray-900 text-white hover:bg-black"
-                        >
-                          Save Picks
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {/* Unified Player Table */}
+      <div className="card overflow-x-auto">
+        <h3 className="text-xl font-semibold mb-4 flex items-center">
+          <Users className="h-5 w-5 mr-2 text-valorant-500" />
+          Team Roster
+        </h3>
 
-        <div className="card">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
-            <Users className="h-5 w-5 mr-2 text-blue-600" />
-            Bench ({bench.length})
-          </h3>
-          {bench.length === 0 ? (
-            <p className="text-gray-600">No bench players.</p>
-          ) : (
-            <ul className="divide-y divide-gray-800/50">
-              {bench.map(p => (
-                <li key={p.id} className="py-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{p.player_name}</div>
-                    <div className="text-sm text-gray-500">{p.team}</div>
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-700 text-left text-sm text-gray-400">
+              <th className="py-2 px-4">Player</th>
+              <th className="py-2 px-2">Action</th>
+              <th className="py-2 px-2 text-center">Agent 1</th>
+              <th className="py-2 px-2 text-center">Agent 2</th>
+              <th className="py-2 px-2 text-center">Agent 3</th>
+              <th className="py-2 px-2">Agents</th>
+              <th className="py-2 px-4 text-right">Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Starters Section */}
+            {starters.map(player => (
+              <PlayerRow key={player.player_name} player={player} />
+            ))}
+
+            {/* Divider */}
+            {bench.length > 0 && (
+              <tr>
+                <td colSpan={7} className="py-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 h-px bg-gray-700"></div>
+                    <span className="text-sm text-gray-400 font-medium">Bench Players</span>
+                    <div className="flex-1 h-px bg-gray-700"></div>
                   </div>
-                  {!isLocked && (
-                    <button
-                      onClick={() => handleTogglePlayer(p)}
-                      className="flex items-center px-2 py-1 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
-                      title="Promote to starter"
-                    >
-                      <ChevronUp className="h-4 w-4 mr-1" />
-                      Start
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                </td>
+              </tr>
+            )}
+
+            {/* Bench Section */}
+            {bench.map(player => (
+              <PlayerRow key={player.player_name} player={player} />
+            ))}
+          </tbody>
+        </table>
+
+        {playerScores.length === 0 && (
+          <p className="text-gray-500 text-center py-8">No players on your team yet.</p>
+        )}
       </div>
+
+      {/* Swap Side Panel */}
+      <SidePanel
+        isOpen={swapModalOpen}
+        onClose={() => {
+          setSwapModalOpen(false);
+          setPlayerToPromote(null);
+        }}
+        title="Select Player to Bench"
+        footer={
+          <button
+            onClick={() => {
+              setSwapModalOpen(false);
+              setPlayerToPromote(null);
+            }}
+            className="w-full py-3 px-4 bg-gray-600 hover:bg-gray-500 text-white font-medium rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        }
+      >
+        <p className="text-gray-300 mb-6">
+          Your starting lineup is full. Select a starter to bench in order to start <strong className="text-white">{playerToPromote}</strong>.
+        </p>
+
+        <div className="space-y-3">
+          {starters.map(starter => (
+            <button
+              key={starter.player_name}
+              onClick={() => handleSwapPlayers(starter.player_name)}
+              className="w-full flex items-center justify-between p-4 border border-gray-600 rounded-lg hover:border-gray-500 transition-colors text-left"
+              style={{ backgroundColor: 'rgb(30, 41, 52)' }}
+            >
+              <div className="text-left">
+                <div className="font-medium text-white">{starter.player_name}</div>
+                <div className="text-sm text-gray-400">{starter.team}</div>
+              </div>
+              <span className="text-sm font-medium text-valorant-400 flex-shrink-0 ml-4">{starter.total_points.toFixed(1)} pts</span>
+            </button>
+          ))}
+        </div>
+      </SidePanel>
+
+      {/* Agent Selection Panel */}
+      {selectedPlayerForAgents && team && (
+        <AgentSelectionPanel
+          isOpen={agentPanelOpen}
+          onClose={() => {
+            setAgentPanelOpen(false);
+            setSelectedPlayerForAgents(null);
+          }}
+          playerName={selectedPlayerForAgents.player_name}
+          teamId={team.id}
+          existingAgents={selectedPlayerForAgents.agent_predictions}
+          onSave={refreshPlayerData}
+        />
+      )}
 
       {/* Free Agent Swap */}
       {draftCompleted && (
@@ -460,7 +548,7 @@ export default function MyTeamPage() {
                   <label key={fa.player_name} className={`flex items-center justify-between p-2 border rounded cursor-pointer ${addSelection === fa.player_name ? 'border-valorant-600 bg-valorant-50' : ''}`}>
                     <div>
                       <div className="font-medium text-sm">{fa.player_name}</div>
-                      <div className="text-xs text-gray-500">{fa.team} • {fa.primary_role}</div>
+                      <div className="text-xs text-gray-500">{fa.team}</div>
                     </div>
                     <input type="radio" name="add" checked={addSelection === fa.player_name} onChange={() => setAddSelection(fa.player_name)} />
                   </label>
@@ -476,8 +564,7 @@ export default function MyTeamPage() {
                 try {
                   const res = await api.dropPlayer(team.league_id, team.id, dropSelection);
                   showToast(res.message, { type: 'success' });
-                  const list = await api.getTeamPlayers(team.id);
-                  setPlayers(list);
+                  await refreshPlayerData();
                   setDropSelection(null);
                 } catch (e: any) {
                   showToast(e?.message || 'Drop failed', { type: 'error' });
@@ -495,8 +582,7 @@ export default function MyTeamPage() {
                 try {
                   const res = await api.addFreeAgent(team.league_id, team.id, addSelection);
                   showToast(res.message, { type: 'success' });
-                  const list = await api.getTeamPlayers(team.id);
-                  setPlayers(list);
+                  await refreshPlayerData();
                   const pool = await api.getFreeAgentPool(team.league_id);
                   setFreeAgentPool(pool);
                   setAddSelection(null);
@@ -582,5 +668,3 @@ export default function MyTeamPage() {
     </div>
   );
 }
-
-

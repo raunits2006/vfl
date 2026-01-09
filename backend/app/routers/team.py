@@ -8,10 +8,13 @@ from app.database import get_session
 from app.models.league_models import Team, TeamPlayer, League, LeagueMember, LeagueSettings, AgentPrediction
 from app.models.player_pool_model import Players
 from app.models.user_model import User
+from app.models.live_data_models import PlayerStat
+from app.models.match_model import Match
 from app.utils.draft_utils import check_team_lock_status
 from app.utils.deps import enforce_team_unlocked
-from app.utils.agents import get_valid_agents
+from app.utils.agents import get_valid_agents, get_agent_class, FALLBACK_AGENT_TO_CLASS
 from app.utils.auth import get_current_active_user
+from sqlmodel import and_, or_, func
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -127,19 +130,46 @@ def set_agent_prediction(
     
     valid_agents = get_valid_agents(session)
     normalized: List[str] = []
-    seen = set()
     for name in body.picks:
         if name not in valid_agents:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid agent: {name}")
-        if name in seen:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate agents not allowed")
-        seen.add(name)
         normalized.append(name)
+    # Note: Duplicate agents ARE allowed (player can pick same agent across multiple maps)
 
     # Ensure player belongs to this team
     tp = session.exec(select(TeamPlayer).where(TeamPlayer.team_id == team_id, TeamPlayer.player_name == body.player_name)).first()
     if not tp:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not on this team")
+
+    # Check if new picks include a duelist agent
+    new_has_duelist = any(get_agent_class(agent, session) == "Duelist" for agent in normalized)
+    
+    if new_has_duelist:
+        # Get team to find league settings
+        team = session.exec(select(Team).where(Team.id == team_id)).first()
+        if team:
+            settings = session.exec(select(LeagueSettings).where(LeagueSettings.league_id == team.league_id)).first()
+            max_duelist_players = settings.max_duelist_agent_players if settings else 2
+            
+            # Count other players on team who have duelist agents in their predictions
+            all_predictions = session.exec(
+                select(AgentPrediction).where(
+                    AgentPrediction.team_id == team_id,
+                    AgentPrediction.player_name != body.player_name  # Exclude current player
+                )
+            ).all()
+            
+            duelist_player_count = 0
+            for pred in all_predictions:
+                picks = [p.strip() for p in pred.picks_csv.split(",") if p.strip()]
+                if any(get_agent_class(agent, session) == "Duelist" for agent in picks):
+                    duelist_player_count += 1
+            
+            if duelist_player_count >= max_duelist_players:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot have more than {max_duelist_players} players with duelist agents. You already have {duelist_player_count}."
+                )
 
     pred = session.exec(select(AgentPrediction).where(AgentPrediction.team_id == team_id, AgentPrediction.player_name == body.player_name)).first()
     now = datetime.utcnow()
@@ -601,3 +631,192 @@ def get_team_lock_status(
         "next_match_time": next_time.isoformat() if next_time else None,
         "lock_reason": "weekly_schedule" if is_locked else None,
     }
+
+
+# New models for player scores
+class PlayerScoreInfo(BaseModel):
+    player_name: str
+    team: str  # Valorant team
+    is_starting: bool
+    total_points: float
+    agent_predictions: List[str]  # 3 agent names or empty
+    agent_classes: List[str]  # corresponding classes for predictions
+
+
+class SwapPlayersRequest(BaseModel):
+    bench_player: str   # player to promote to starter
+    starter_player: str  # player to demote to bench
+
+
+class SwapPlayersResponse(BaseModel):
+    message: str
+    promoted_player: TeamPlayerResponse
+    demoted_player: TeamPlayerResponse
+
+
+def _calculate_player_total_score(player_name: str, session: Session) -> float:
+    """Calculate total score for a player from VCT 2026: Americas Stage 1 matches only."""
+    # Only count scores from VCT 2026: Americas Stage 1
+    scores = session.exec(
+        select(PlayerStat.score)
+        .join(Match, Match.id == PlayerStat.match_id)
+        .where(
+            and_(
+                PlayerStat.player_name == player_name,
+                PlayerStat.score.is_not(None),
+                Match.match_event == "VCT 2026: Americas Stage 1"
+            )
+        )
+    ).all()
+    
+    return sum(float(s) for s in scores if s is not None)
+
+
+@router.get("/{team_id}/player-scores", response_model=List[PlayerScoreInfo])
+def get_team_player_scores(
+    team_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get all players on a team with their total scores and agent predictions."""
+    # Verify team exists
+    team = session.exec(select(Team).where(Team.id == team_id)).first()
+    if not team:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found"
+        )
+    
+    # Get all players on this team
+    team_players = session.exec(
+        select(TeamPlayer).where(TeamPlayer.team_id == team_id)
+    ).all()
+    
+    # Get agent predictions for this team
+    predictions_raw = session.exec(
+        select(AgentPrediction).where(AgentPrediction.team_id == team_id)
+    ).all()
+    predictions_map = {p.player_name: p for p in predictions_raw}
+    
+    result = []
+    for tp in team_players:
+        # Get player's Valorant team from Players table
+        player = session.exec(
+            select(Players).where(Players.player_name == tp.player_name)
+        ).first()
+        valorant_team = player.team if player else "Unknown"
+        
+        # Calculate total score
+        total_points = _calculate_player_total_score(tp.player_name, session)
+        
+        # Get agent predictions and their classes
+        agent_predictions = []
+        agent_classes = []
+        if tp.player_name in predictions_map:
+            pred = predictions_map[tp.player_name]
+            agent_predictions = [a.strip() for a in pred.picks_csv.split(",") if a.strip()]
+            agent_classes = [
+                get_agent_class(agent, session) or "Unknown"
+                for agent in agent_predictions
+            ]
+        
+        result.append(PlayerScoreInfo(
+            player_name=tp.player_name,
+            team=valorant_team,
+            is_starting=tp.is_starting,
+            total_points=total_points,
+            agent_predictions=agent_predictions,
+            agent_classes=agent_classes
+        ))
+    
+    return result
+
+
+@router.post("/{team_id}/swap-players", response_model=SwapPlayersResponse)
+def swap_players(
+    team_id: int,
+    body: SwapPlayersRequest,
+    _: None = Depends(enforce_team_unlocked),
+    session: Session = Depends(get_session)
+):
+    """Swap a bench player with a starter (promote bench player, demote starter)."""
+    # Verify team exists
+    team = session.exec(select(Team).where(Team.id == team_id)).first()
+    if not team:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found"
+        )
+    
+    # Find the bench player
+    bench_player = session.exec(
+        select(TeamPlayer).where(
+            TeamPlayer.team_id == team_id,
+            TeamPlayer.player_name == body.bench_player
+        )
+    ).first()
+    
+    if not bench_player:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Player '{body.bench_player}' not found on this team"
+        )
+    
+    if bench_player.is_starting:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Player '{body.bench_player}' is already a starter"
+        )
+    
+    # Find the starter player
+    starter_player = session.exec(
+        select(TeamPlayer).where(
+            TeamPlayer.team_id == team_id,
+            TeamPlayer.player_name == body.starter_player
+        )
+    ).first()
+    
+    if not starter_player:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Player '{body.starter_player}' not found on this team"
+        )
+    
+    if not starter_player.is_starting:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Player '{body.starter_player}' is not currently a starter"
+        )
+    
+    # Perform the swap
+    bench_player.is_starting = True
+    starter_player.is_starting = False
+    
+    session.commit()
+    session.refresh(bench_player)
+    session.refresh(starter_player)
+    
+    # Get player details for response
+    bench_player_details = session.exec(
+        select(Players).where(Players.player_name == body.bench_player)
+    ).first()
+    starter_player_details = session.exec(
+        select(Players).where(Players.player_name == body.starter_player)
+    ).first()
+    
+    return SwapPlayersResponse(
+        message=f"Successfully swapped {body.bench_player} with {body.starter_player}",
+        promoted_player=TeamPlayerResponse(
+            id=bench_player.id,
+            player_name=bench_player.player_name,
+            team=bench_player_details.team if bench_player_details else "",
+            is_starting=bench_player.is_starting,
+            added_at=bench_player.added_at.isoformat()
+        ),
+        demoted_player=TeamPlayerResponse(
+            id=starter_player.id,
+            player_name=starter_player.player_name,
+            team=starter_player_details.team if starter_player_details else "",
+            is_starting=starter_player.is_starting,
+            added_at=starter_player.added_at.isoformat()
+        )
+    )

@@ -364,72 +364,77 @@ def check_team_lock_status(session: Session) -> tuple[bool, str, Optional[dateti
     Returns:
         Tuple of (is_locked, reason_message, next_unlock_or_lock_time)
     """
-    import pytz
+    # DEVELOPMENT MODE: Always return unlocked for development
+    # TODO: Remove this when ready for production
+    return False, "Team changes are currently unlocked (development mode).", None
     
-    # Define CST timezone
-    cst = pytz.timezone('America/Chicago')
-    
-    # Get current time in CST
-    now_utc = datetime.now(timezone.utc)
-    now_cst = now_utc.astimezone(cst)
-    
-    # Get current week's Monday 12:00 AM CST and Wednesday 11:00 AM CST
-    current_monday = now_cst.date() - timedelta(days=now_cst.weekday())
-    current_wednesday = current_monday + timedelta(days=2)
-    
-    # Monday 12:00 AM CST (start of Monday)
-    unlock_time_cst = datetime.combine(current_monday, datetime.min.time())
-    # Wednesday 11:00 AM CST
-    lock_time_cst = datetime.combine(current_wednesday, datetime.min.time().replace(hour=11))
-    
-    # Localize to CST timezone
-    unlock_time_cst = cst.localize(unlock_time_cst)
-    lock_time_cst = cst.localize(lock_time_cst)
-    
-    # Convert to UTC for consistent comparison
-    unlock_time_utc = unlock_time_cst.astimezone(timezone.utc)
-    lock_time_utc = lock_time_cst.astimezone(timezone.utc)
-    
-    # Determine if we're in the locked period
-    if now_utc >= lock_time_utc:
-        # We're past Wednesday 11 AM, locked until next Monday 12:00 AM
-        next_monday = current_monday + timedelta(days=7)
-        next_unlock_time_cst = datetime.combine(next_monday, datetime.min.time())
-        next_unlock_time_cst = cst.localize(next_unlock_time_cst)
-        next_unlock_time_utc = next_unlock_time_cst.astimezone(timezone.utc)
-        
-        time_until_unlock = next_unlock_time_utc - now_utc
-        days_until = time_until_unlock.days
-        hours_until = int(time_until_unlock.seconds / 3600)
-        
-        message = (
-            f"Team changes are locked. Teams are locked from Wednesday 11:00 AM CST "
-            f"until Monday 12:00 AM CST. Next unlock in {days_until} days and {hours_until} hours "
-            f"on {next_unlock_time_cst.strftime('%A, %B %d at %I:%M %p CST')}."
-        )
-        
-        return True, message, next_unlock_time_utc
-        
-    elif now_utc >= unlock_time_utc:
-        # We're between Monday 12:00 AM and Wednesday 11:00 AM, unlocked
-        time_until_lock = lock_time_utc - now_utc
-        hours_until = int(time_until_lock.total_seconds() / 3600)
-        
-        message = f"Team changes are unlocked until {lock_time_cst.strftime('%A, %B %d at %I:%M %p CST')} (in {hours_until} hours)."
-        
-        return False, message, lock_time_utc
-        
-    else:
-        # We're before Monday 12:00 AM this week, still locked from last week
-        time_until_unlock = unlock_time_utc - now_utc
-        hours_until = int(time_until_unlock.total_seconds() / 3600)
-        
-        message = (
-            f"Team changes are locked. Teams unlock every Monday at 12:00 AM CST. "
-            f"Next unlock in {hours_until} hours on {unlock_time_cst.strftime('%A, %B %d at %I:%M %p CST')}."
-        )
-        
-        return True, message, unlock_time_utc
+    # Original lock logic commented out for development:
+    # import pytz
+    # 
+    # # Define CST timezone
+    # cst = pytz.timezone('America/Chicago')
+    # 
+    # # Get current time in CST
+    # now_utc = datetime.now(timezone.utc)
+    # now_cst = now_utc.astimezone(cst)
+    # 
+    # # Get current week's Monday 12:00 AM CST and Wednesday 11:00 AM CST
+    # current_monday = now_cst.date() - timedelta(days=now_cst.weekday())
+    # current_wednesday = current_monday + timedelta(days=2)
+    # 
+    # # Monday 12:00 AM CST (start of Monday)
+    # unlock_time_cst = datetime.combine(current_monday, datetime.min.time())
+    # # Wednesday 11:00 AM CST
+    # lock_time_cst = datetime.combine(current_wednesday, datetime.min.time().replace(hour=11))
+    # 
+    # # Localize to CST timezone
+    # unlock_time_cst = cst.localize(unlock_time_cst)
+    # lock_time_cst = cst.localize(lock_time_cst)
+    # 
+    # # Convert to UTC for consistent comparison
+    # unlock_time_utc = unlock_time_cst.astimezone(timezone.utc)
+    # lock_time_utc = lock_time_cst.astimezone(timezone.utc)
+    # 
+    # # Determine if we're in the locked period
+    # if now_utc >= lock_time_utc:
+    #     # We're past Wednesday 11 AM, locked until next Monday 12:00 AM
+    #     next_monday = current_monday + timedelta(days=7)
+    #     next_unlock_time_cst = datetime.combine(next_monday, datetime.min.time())
+    #     next_unlock_time_cst = cst.localize(next_unlock_time_cst)
+    #     next_unlock_time_utc = next_unlock_time_cst.astimezone(timezone.utc)
+    #     
+    #     time_until_unlock = next_unlock_time_utc - now_utc
+    #     days_until = time_until_unlock.days
+    #     hours_until = int(time_until_unlock.seconds / 3600)
+    #     
+    #     message = (
+    #         f"Team changes are locked. Teams are locked from Wednesday 11:00 AM CST "
+    #         f"until Monday 12:00 AM CST. Next unlock in {days_until} days and {hours_until} hours "
+    #         f"on {next_unlock_time_cst.strftime('%A, %B %d at %I:%M %p CST')}."
+    #     )
+    #     
+    #     return True, message, next_unlock_time_utc
+    #     
+    # elif now_utc >= unlock_time_utc:
+    #     # We're between Monday 12:00 AM and Wednesday 11:00 AM, unlocked
+    #     time_until_lock = lock_time_utc - now_utc
+    #     hours_until = int(time_until_lock.total_seconds() / 3600)
+    #     
+    #     message = f"Team changes are unlocked until {lock_time_cst.strftime('%A, %B %d at %I:%M %p CST')} (in {hours_until} hours)."
+    #     
+    #     return False, message, lock_time_utc
+    #     
+    # else:
+    #     # We're before Monday 12:00 AM this week, still locked from last week
+    #     time_until_unlock = unlock_time_utc - now_utc
+    #     hours_until = int(time_until_unlock.total_seconds() / 3600)
+    #     
+    #     message = (
+    #         f"Team changes are locked. Teams unlock every Monday at 12:00 AM CST. "
+    #         f"Next unlock in {hours_until} hours on {unlock_time_cst.strftime('%A, %B %d at %I:%M %p CST')}."
+    #     )
+    #     
+    #     return True, message, unlock_time_utc
 
 
 def validate_team_not_locked(session: Session) -> None:

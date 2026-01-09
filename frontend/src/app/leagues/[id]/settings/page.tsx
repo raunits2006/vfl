@@ -80,6 +80,7 @@ export default function LeagueSettingsPage() {
         agent_exact_match_multiplier: Number(settings.agent_exact_match_multiplier),
         agent_class_match_multiplier: Number(settings.agent_class_match_multiplier),
         agent_miss_multiplier: Number(settings.agent_miss_multiplier),
+        max_duelist_agent_players: Number(settings.max_duelist_agent_players),
       };
       if (payload.starting_players + payload.bench_players !== payload.max_players) {
         showToast('Starting + Bench must equal Max Players', { type: 'warning' });
@@ -171,6 +172,13 @@ export default function LeagueSettingsPage() {
               </label>
             </div>
             <p className="text-xs text-gray-500">Starters + Bench must equal Max Players.</p>
+            <label className="block">
+              <span className="text-sm text-gray-700">Max Players with Duelist Agents</span>
+              <input type="number" min={0} max={settings.max_players} value={settings.max_duelist_agent_players ?? 2}
+                onChange={e => updateField('max_duelist_agent_players', Number(e.target.value))}
+                className="input-field mt-1" />
+              <p className="text-xs text-gray-500 mt-1">Maximum number of players that can have duelist agents in their predictions.</p>
+            </label>
           </div>
         </div>
 

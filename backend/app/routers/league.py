@@ -63,6 +63,7 @@ class LeagueSettingsResponse(BaseModel):
     agent_exact_match_multiplier: float
     agent_class_match_multiplier: float
     agent_miss_multiplier: float
+    max_duelist_agent_players: int
 
 class LeagueSettingsUpdate(BaseModel):
     max_players: Optional[int] = None
@@ -75,6 +76,7 @@ class LeagueSettingsUpdate(BaseModel):
     agent_exact_match_multiplier: Optional[float] = None
     agent_class_match_multiplier: Optional[float] = None
     agent_miss_multiplier: Optional[float] = None
+    max_duelist_agent_players: Optional[int] = None
 
 class JoinByPinRequest(BaseModel):
     user_id: int
@@ -342,6 +344,7 @@ def get_league_settings(
         agent_exact_match_multiplier=settings.agent_exact_match_multiplier,
         agent_class_match_multiplier=settings.agent_class_match_multiplier,
         agent_miss_multiplier=settings.agent_miss_multiplier,
+        max_duelist_agent_players=settings.max_duelist_agent_players,
     )
 
 @router.put("/{league_id}/settings", response_model=LeagueSettingsResponse)
@@ -418,6 +421,10 @@ def update_league_settings(
         settings.agent_class_match_multiplier = payload.agent_class_match_multiplier
     if payload.agent_miss_multiplier is not None:
         settings.agent_miss_multiplier = payload.agent_miss_multiplier
+    if payload.max_duelist_agent_players is not None:
+        if payload.max_duelist_agent_players < 0:
+            raise HTTPException(status_code=400, detail="max_duelist_agent_players cannot be negative")
+        settings.max_duelist_agent_players = payload.max_duelist_agent_players
 
     session.add(settings)
     session.commit()
@@ -434,6 +441,7 @@ def update_league_settings(
         agent_exact_match_multiplier=settings.agent_exact_match_multiplier,
         agent_class_match_multiplier=settings.agent_class_match_multiplier,
         agent_miss_multiplier=settings.agent_miss_multiplier,
+        max_duelist_agent_players=settings.max_duelist_agent_players,
     )
 
 # Commissioner management

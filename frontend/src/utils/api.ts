@@ -6,6 +6,7 @@ import {
   Team,
   TeamSummary,
   TeamPlayer,
+  TeamPlayerWithScore,
   FantasyScore,
   LeagueLeaderboard,
   LeagueLeaderboardEnvelope,
@@ -159,6 +160,15 @@ export const api = {
     method: 'PATCH',
     body: JSON.stringify({ name }),
   }),
+  getTeamPlayerScores: (teamId: number) => apiRequest<TeamPlayerWithScore[]>(`/api/teams/${teamId}/player-scores`),
+  swapPlayers: (teamId: number, benchPlayer: string, starterPlayer: string) =>
+    apiRequest<{ message: string; promoted_player: TeamPlayer; demoted_player: TeamPlayer }>(
+      `/api/teams/${teamId}/swap-players`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ bench_player: benchPlayer, starter_player: starterPlayer }),
+      }
+    ),
 
   // Fantasy Scores
   getLeagueLeaderboardCurrentEvent: (leagueId: number) => apiRequest<LeagueLeaderboardEnvelope>(`/api/fantasy/leagues/${leagueId}/leaderboard`),
