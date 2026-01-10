@@ -230,7 +230,9 @@ def validate_free_agent_swap(
     add_player_name: str
 ) -> tuple[bool, str]:
     """
-    Validate that a free agent swap doesn't violate team rules, especially duelist limits.
+    Validate that a free agent swap doesn't violate team rules.
+    
+    Note: Duelist player role restriction removed - only agent prediction duelist limit applies now.
     
     Args:
         session: Database session
@@ -255,28 +257,12 @@ def validate_free_agent_swap(
     if not current_player:
         return False, f"Player {drop_player_name} is not on your team"
     
-    # Get the roles of both players
+    # Get both players to verify they exist
     drop_player = session.exec(select(Players).where(Players.player_name == drop_player_name)).first()
     add_player = session.exec(select(Players).where(Players.player_name == add_player_name)).first()
     
     if not drop_player or not add_player:
         return False, "One or both players not found"
-    
-    # Count current duelists on team
-    current_duelist_count = count_team_duelists(session, team_id)
-    
-    # Calculate duelist count after the swap
-    duelist_change = 0
-    if drop_player.primary_role == "Duelist":
-        duelist_change -= 1
-    if add_player.primary_role == "Duelist":
-        duelist_change += 1
-    
-    new_duelist_count = current_duelist_count + duelist_change
-    
-    # Check if the swap would exceed the duelist limit
-    if new_duelist_count > 2:
-        return False, "Cannot have more than 2 duelist players per team"
     
     return True, ""
 

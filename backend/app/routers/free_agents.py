@@ -11,7 +11,6 @@ from app.utils.draft_utils import (
     get_free_agents_for_league, 
     validate_free_agent_swap,
     perform_free_agent_swap,
-    count_team_duelists
 )
 from app.utils.deps import enforce_team_unlocked
 from app.utils.auth import get_current_user
@@ -21,7 +20,6 @@ router = APIRouter(prefix="/free-agents", tags=["free-agents"])
 class FreeAgentResponse(BaseModel):
     player_name: str
     team: str
-    primary_role: str
     image_url: str | None
 
 class FreeAgentSwapRequest(BaseModel):
@@ -81,7 +79,6 @@ def get_free_agent_pool(
         FreeAgentResponse(
             player_name=player.player_name,
             team=player.team,
-            primary_role=player.primary_role or "Unknown",
             image_url=player.image_url
         ) for player in free_agents
     ]
@@ -112,14 +109,7 @@ def add_free_agent(
     if req.add_player_name not in fa_names:
         raise HTTPException(status_code=400, detail=f"Player {req.add_player_name} is not available as a free agent")
 
-    # Enforce duelist limit: cannot exceed 2
-    player_row = session.exec(select(Players).where(Players.player_name == req.add_player_name)).first()
-    if not player_row:
-        raise HTTPException(status_code=404, detail="Player not found")
-    if (player_row.primary_role == "Duelist"):
-        current_duelists = count_team_duelists(session, req.team_id)
-        if current_duelists >= 2:
-            raise HTTPException(status_code=400, detail="Cannot have more than 2 duelist players per team")
+    # Note: Duelist player role restriction removed - only agent prediction duelist limit applies now
 
     # Add to team roster
     team_player = TeamPlayer(team_id=req.team_id, player_name=req.add_player_name, is_starting=False)

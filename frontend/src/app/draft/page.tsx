@@ -64,7 +64,7 @@ export default function DraftPage() {
               const u = new URL(backendUrl);
               u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
               return u.origin;
-            } catch {}
+            } catch { }
           }
           // Fallback: if frontend on 3000, assume backend on 8000
           const isHttps = window.location.protocol === 'https:';
@@ -85,14 +85,16 @@ export default function DraftPage() {
           try {
             const message = JSON.parse(event.data);
             if (message.type === 'draft_state') {
-              setDraftStatus(prev => ({ ...(prev || {} as any), ...{
-                draft_id: draftId,
-                league_id: message.league_id || (prev?.league_id ?? undefined),
-                status: message.status,
-                current_pick: message.current_pick,
-                current_user_id: message.current_user_id,
-                pick_deadline: message.pick_deadline,
-              }}));
+              setDraftStatus(prev => ({
+                ...(prev || {} as any), ...{
+                  draft_id: draftId,
+                  league_id: message.league_id || (prev?.league_id ?? undefined),
+                  status: message.status,
+                  current_pick: message.current_pick,
+                  current_user_id: message.current_user_id,
+                  pick_deadline: message.pick_deadline,
+                }
+              }));
             } else if (message.type === 'draft_pick') {
               // Update picks list and status
               fetchDraftPicks(draftId);
@@ -103,7 +105,7 @@ export default function DraftPage() {
             } else if (message.type === 'error') {
               showToast(message.message || 'WebSocket error', { type: 'error' });
             }
-          } catch {}
+          } catch { }
         };
         ws.onerror = () => {
           showToast('Draft live connection error', { type: 'warning' });
@@ -112,7 +114,7 @@ export default function DraftPage() {
           wsRef.current = null;
         };
       }
-    } catch {}
+    } catch { }
 
     // Fallback polling in case websocket doesn't deliver updates
     const poll = setInterval(() => {
@@ -123,7 +125,7 @@ export default function DraftPage() {
     return () => {
       clearInterval(poll);
       if (wsRef.current) {
-        try { wsRef.current.close(); } catch {}
+        try { wsRef.current.close(); } catch { }
         wsRef.current = null;
       }
     };
@@ -185,23 +187,23 @@ export default function DraftPage() {
       // Show toast notification for specific errors
       if (error instanceof Error) {
         if (error.message.includes('Failed to auto-initialize draft order')) {
-          showToast('Failed to initialize draft order. Please contact the league commissioner.', { 
+          showToast('Failed to initialize draft order. Please contact the league commissioner.', {
             type: 'error',
             title: 'Draft Error'
           });
         } else if (error.message.includes('Draft not found')) {
-          showToast('Draft not found. Please check the URL or contact support.', { 
+          showToast('Draft not found. Please check the URL or contact support.', {
             type: 'error',
             title: 'Draft Error'
           });
         } else {
-          showToast('Failed to load draft status. Please try refreshing the page.', { 
+          showToast('Failed to load draft status. Please try refreshing the page.', {
             type: 'error',
             title: 'Connection Error'
           });
         }
       } else {
-        showToast('An unexpected error occurred while loading the draft.', { 
+        showToast('An unexpected error occurred while loading the draft.', {
           type: 'error',
           title: 'Error'
         });
@@ -238,7 +240,7 @@ export default function DraftPage() {
         map[m.user_id] = m.username;
       }
       setUsernamesById(map);
-    } catch {}
+    } catch { }
   };
 
   const fetchAvailablePlayers = async () => {
@@ -295,7 +297,7 @@ export default function DraftPage() {
 
   const handleTogglePlayer = async (player: TeamPlayer) => {
     if (!team) return;
-    
+
     try {
       const updatedPlayer = await api.togglePlayerStartingStatus(team.id, player.player_name);
       // Update the local players array with the new status
@@ -319,14 +321,14 @@ export default function DraftPage() {
 
     try {
       await api.makeDraftPick(draftId, team.id, selectedPlayer);
-      
+
       // Immediately remove the picked player from local state for instant UI feedback
-      setAvailablePlayers(prevPlayers => 
+      setAvailablePlayers(prevPlayers =>
         prevPlayers.filter(player => player.player_name !== selectedPlayer)
       );
-      
+
       setSelectedPlayer('');
-      
+
       // Refresh data with a slight delay to ensure database transaction is committed
       setTimeout(() => {
         fetchDraftStatus(draftId);
@@ -488,21 +490,19 @@ export default function DraftPage() {
           <div className="bg-gray-100 p-1 rounded-lg inline-flex">
             <button
               onClick={() => setShowRoster(false)}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                !showRoster
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${!showRoster
                   ? 'bg-valorant-600 text-white'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
             >
               Draft Board
             </button>
             <button
               onClick={() => setShowRoster(true)}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                showRoster
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${showRoster
                   ? 'bg-valorant-600 text-white'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
             >
               My Roster ({teamPlayers.length})
             </button>
@@ -592,115 +592,111 @@ export default function DraftPage() {
         // Draft Board View
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Draft Status */}
-      <div className="lg:col-span-3">
-        <div className="card">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold">Fantasy Draft</h1>
-            {draftStatus && (
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center">
-                  <Clock className="h-5 w-5 mr-2 text-valorant-600" />
-                  <span className="font-medium">{formatTime(timeRemaining)}</span>
-                </div>
-                <div className="flex items-center">
-                  <Trophy className="h-5 w-5 mr-2 text-valorant-600" />
-                  <span>Pick #{draftStatus.current_pick}</span>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {timeRemaining > 0 && (
-            <div className="mt-4 draft-timer">
-              <p className="font-medium">Time remaining for current pick: {formatTime(timeRemaining)}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Available Players */}
-      <div className="lg:col-span-2">
-        <div className="card">
-          <h2 className="text-xl font-bold mb-4">Available Players</h2>
-          {/* Team is now auto-created on league join; we can show a minimal note if still missing */}
-          {!team && user && draftStatus?.league_id && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded">
-              <p>Setting up your team... If this persists, refresh the page.</p>
-            </div>
-          )}
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {availablePlayers.map((player) => (
-              <div
-                key={'player_name' in player ? player.player_name : (player as any).id}
-                className={`player-card cursor-pointer ${
-                  selectedPlayer === player.player_name 
-                    ? 'border-valorant-500 bg-valorant-50' 
-                    : ''
-                }`}
-                onClick={() => setSelectedPlayer(player.player_name)}
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="font-medium">{player.player_name}</h3>
-                    <p className="text-sm text-gray-600">{'team_name' in player ? player.team_name : (player as FreeAgent).team}</p>
+          <div className="lg:col-span-3">
+            <div className="card">
+              <div className="flex justify-between items-center">
+                <h1 className="text-2xl font-bold">Fantasy Draft</h1>
+                {draftStatus && (
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <Clock className="h-5 w-5 mr-2 text-valorant-600" />
+                      <span className="font-medium">{formatTime(timeRemaining)}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <Trophy className="h-5 w-5 mr-2 text-valorant-600" />
+                      <span>Pick #{draftStatus.current_pick}</span>
+                    </div>
                   </div>
-                  <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm">
-                    {'role' in player ? player.role : (player as FreeAgent).primary_role}
-                  </span>
-                </div>
+                )}
               </div>
-            ))}
-          </div>
-          
-          <div className="mt-4 flex space-x-2">
-            <button
-              onClick={makePick}
-              disabled={!selectedPlayer || !team || !draftId || draftStatus?.status !== 'IN_PROGRESS'}
-              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Make Pick
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* Draft Order + Draft Results */}
-      <div className="lg:col-span-1 space-y-4">
-        <div className="card">
-          <h2 className="text-xl font-bold mb-4 flex items-center"><ListOrdered className="h-5 w-5 mr-2"/>Draft Order</h2>
-          {draftOrder && draftStatus ? (
-            <ol className="space-y-2 list-decimal list-inside">
-              {draftOrder.map((userId, idx) => {
-                const isCurrent = draftStatus.current_user_id === userId;
-                return (
-                  <li key={idx} className={isCurrent ? 'font-semibold text-valorant-600' : ''}>
-                    {usernamesById[userId] || `User #${userId}`} {isCurrent ? '(Picking now)' : ''}
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <p className="text-gray-600">Draft order not set yet.</p>
-          )}
-        </div>
-        <div className="card">
-          <h2 className="text-xl font-bold mb-4">Draft Board</h2>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {draftPicks.map((pick) => (
-              <div key={pick.id} className="flex justify-between items-center p-2 border rounded">
-                <div>
-                  <p className="font-medium text-sm">{pick.player_name}</p>
-                  <p className="text-xs text-gray-600">Pick #{pick.pick_number}</p>
+              {timeRemaining > 0 && (
+                <div className="mt-4 draft-timer">
+                  <p className="font-medium">Time remaining for current pick: {formatTime(timeRemaining)}</p>
                 </div>
-                <div className="flex items-center">
-                  <User className="h-4 w-4 mr-1 text-gray-400" />
-                  <span className="text-xs">Team {pick.team_id}</span>
-                </div>
-              </div>
-            ))}
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Available Players */}
+          <div className="lg:col-span-2">
+            <div className="card">
+              <h2 className="text-xl font-bold mb-4">Available Players</h2>
+              {/* Team is now auto-created on league join; we can show a minimal note if still missing */}
+              {!team && user && draftStatus?.league_id && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded">
+                  <p>Setting up your team... If this persists, refresh the page.</p>
+                </div>
+              )}
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {availablePlayers.map((player) => (
+                  <div
+                    key={'player_name' in player ? player.player_name : (player as any).id}
+                    className={`player-card cursor-pointer ${selectedPlayer === player.player_name
+                        ? 'border-valorant-500 bg-valorant-50'
+                        : ''
+                      }`}
+                    onClick={() => setSelectedPlayer(player.player_name)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="font-medium">{player.player_name}</h3>
+                        <p className="text-sm text-gray-600">{'team_name' in player ? player.team_name : (player as FreeAgent).team}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex space-x-2">
+                <button
+                  onClick={makePick}
+                  disabled={!selectedPlayer || !team || !draftId || draftStatus?.status !== 'IN_PROGRESS'}
+                  className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Make Pick
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Draft Order + Draft Results */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="card">
+              <h2 className="text-xl font-bold mb-4 flex items-center"><ListOrdered className="h-5 w-5 mr-2" />Draft Order</h2>
+              {draftOrder && draftStatus ? (
+                <ol className="space-y-2 list-decimal list-inside">
+                  {draftOrder.map((userId, idx) => {
+                    const isCurrent = draftStatus.current_user_id === userId;
+                    return (
+                      <li key={idx} className={isCurrent ? 'font-semibold text-valorant-600' : ''}>
+                        {usernamesById[userId] || `User #${userId}`} {isCurrent ? '(Picking now)' : ''}
+                      </li>
+                    );
+                  })}
+                </ol>
+              ) : (
+                <p className="text-gray-600">Draft order not set yet.</p>
+              )}
+            </div>
+            <div className="card">
+              <h2 className="text-xl font-bold mb-4">Draft Board</h2>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {draftPicks.map((pick) => (
+                  <div key={pick.id} className="flex justify-between items-center p-2 border rounded">
+                    <div>
+                      <p className="font-medium text-sm">{pick.player_name}</p>
+                      <p className="text-xs text-gray-600">Pick #{pick.pick_number}</p>
+                    </div>
+                    <div className="flex items-center">
+                      <User className="h-4 w-4 mr-1 text-gray-400" />
+                      <span className="text-xs">Team {pick.team_id}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -14,7 +14,6 @@ from app.models.league_models import (
 from app.models.player_pool_model import Players
 from app.utils.draft_utils import (
     get_next_draft_state, validate_current_picker, get_draft_completion_info,
-    validate_duelist_limit
 )
 from app.utils.auth import get_current_active_user
 # WebSocket imports moved to avoid circular import
@@ -326,10 +325,7 @@ def make_pick(
     if existing_pick:
         raise HTTPException(status_code=400, detail="Player already drafted")
     
-    # Validate duelist limit
-    is_valid, error_message = validate_duelist_limit(session, req.team_id, req.player_name)
-    if not is_valid:
-        raise HTTPException(status_code=400, detail=error_message)
+    # Note: Duelist player role restriction removed - only agent prediction duelist limit applies now
     
     # Add pick
     pick_number = draft.current_pick

@@ -144,7 +144,7 @@ export interface AuthToken {
 export interface FreeAgent {
   player_name: string;
   team: string;
-  primary_role: string;
+  primary_role?: string;
   image_url?: string | null;
 }
 

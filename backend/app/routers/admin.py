@@ -29,7 +29,6 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class PlayerResponse(BaseModel):
     player_name: str
     team: str
-    primary_role: Optional[str]
     image_url: Optional[str]
     total_matches: int
     total_points: float
@@ -40,13 +39,11 @@ class PlayerResponse(BaseModel):
 
 class PlayerUpdate(BaseModel):
     team: Optional[str] = None
-    primary_role: Optional[str] = None
     image_url: Optional[str] = None
 
 class PlayerCreate(BaseModel):
     player_name: str
     team: str
-    primary_role: Optional[str] = None
     image_url: Optional[str] = None
 
 class AgentResponse(BaseModel):
@@ -118,8 +115,6 @@ async def get_all_players(
     
     if team_filter:
         query = query.where(Players.team == team_filter)
-    if role_filter:
-        query = query.where(Players.primary_role == role_filter)
     
     query = query.offset(offset).limit(limit)
     players = session.exec(query).all()
@@ -144,7 +139,6 @@ async def get_all_players(
         player_responses.append(PlayerResponse(
             player_name=player.player_name,
             team=player.team,
-            primary_role=player.primary_role,
             image_url=player.image_url,
             total_matches=total_matches,
             total_points=total_points,
@@ -175,7 +169,6 @@ async def create_player(
     new_player = Players(
         player_name=player_data.player_name,
         team=player_data.team,
-        primary_role=player_data.primary_role,
         image_url=player_data.image_url
     )
     
@@ -186,7 +179,6 @@ async def create_player(
     return PlayerResponse(
         player_name=new_player.player_name,
         team=new_player.team,
-        primary_role=new_player.primary_role,
         image_url=new_player.image_url,
         total_matches=0,
         total_points=0.0,
@@ -215,8 +207,6 @@ async def update_player(
     # Update fields if provided
     if player_data.team is not None:
         player.team = player_data.team
-    if player_data.primary_role is not None:
-        player.primary_role = player_data.primary_role
     if player_data.image_url is not None:
         player.image_url = player_data.image_url
     
@@ -242,7 +232,6 @@ async def update_player(
     return PlayerResponse(
         player_name=player.player_name,
         team=player.team,
-        primary_role=player.primary_role,
         image_url=player.image_url,
         total_matches=total_matches,
         total_points=total_points,
@@ -415,7 +404,6 @@ async def get_top_players(
         player_response = PlayerResponse(
             player_name=player.player_name,
             team=player.team,
-            primary_role=player.primary_role,
             image_url=player.image_url,
             total_matches=total_matches,
             total_points=total_points,

@@ -8,6 +8,8 @@ import { useToast } from '../../../../components/ToastProvider';
 import { useAuth } from '../../../../contexts/AuthContext';
 import SidePanel from '../../../../components/SidePanel';
 import AgentSelectionPanel from '../../../../components/AgentSelectionPanel';
+import FreeAgentPanel from '../../../../components/FreeAgentPanel';
+import TradePanel from '../../../../components/TradePanel';
 import { TeamSummary, TeamPlayer, FreeAgent, TeamPlayerWithScore } from '../../../../types/api';
 
 // Agent to class mapping for display
@@ -29,14 +31,7 @@ export default function MyTeamPage() {
   const { user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const [freeAgentPool, setFreeAgentPool] = useState<FreeAgent[]>([]);
-  const [dropSelection, setDropSelection] = useState<string | null>(null);
-  const [addSelection, setAddSelection] = useState<string | null>(null);
-  const [tradeMode, setTradeMode] = useState(false);
-  const [receivingTeamId, setReceivingTeamId] = useState<number | null>(null);
   const [leagueTeams, setLeagueTeams] = useState<Array<{ id: number; name: string; user_id: number }>>([]);
-  const [offeringPlayers, setOfferingPlayers] = useState<string[]>([]);
-  const [receivingPlayers, setReceivingPlayers] = useState<string[]>([]);
-  const [receivingTeamPlayers, setReceivingTeamPlayers] = useState<TeamPlayer[]>([]);
 
   const [team, setTeam] = useState<TeamSummary | null>(null);
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
@@ -56,6 +51,10 @@ export default function MyTeamPage() {
   // Agent selection panel state
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
   const [selectedPlayerForAgents, setSelectedPlayerForAgents] = useState<TeamPlayerWithScore | null>(null);
+
+  // Free Agent and Trade panel state
+  const [freeAgentPanelOpen, setFreeAgentPanelOpen] = useState(false);
+  const [tradePanelOpen, setTradePanelOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -144,18 +143,6 @@ export default function MyTeamPage() {
     loadPool();
   }, [team?.league_id]);
 
-  // Load receiving team's roster when selection changes
-  useEffect(() => {
-    async function loadReceivingTeamPlayers() {
-      if (!receivingTeamId) { setReceivingTeamPlayers([]); return; }
-      try {
-        const recPlayers = await api.getTeamPlayers(receivingTeamId);
-        setReceivingTeamPlayers(recPlayers);
-      } catch { }
-    }
-    loadReceivingTeamPlayers();
-  }, [receivingTeamId]);
-
   // Compute starters and bench from playerScores
   const starters = useMemo(() => playerScores.filter(p => p.is_starting), [playerScores]);
   const bench = useMemo(() => playerScores.filter(p => !p.is_starting), [playerScores]);
@@ -168,6 +155,9 @@ export default function MyTeamPage() {
       setPlayers(list);
       const scores = await api.getTeamPlayerScores(team.id);
       setPlayerScores(scores);
+      // Also refresh free agent pool
+      const pool = await api.getFreeAgentPool(team.league_id);
+      setFreeAgentPool(pool);
     } catch { }
   };
 
@@ -204,40 +194,6 @@ export default function MyTeamPage() {
       console.error('Error swapping players:', error);
       const message = (error as any)?.message || 'Failed to swap players. Please try again.';
       showToast(message, { type: 'error' });
-    }
-  };
-
-  const performFreeAgentSwap = async () => {
-    if (!team) return;
-    if (!dropSelection || !addSelection) {
-      showToast('Select a player to drop and a free agent to add', { type: 'warning' });
-      return;
-    }
-    try {
-      const res = await api.swapFreeAgent(team.league_id, team.id, dropSelection, addSelection);
-      showToast(res.message, { type: 'success' });
-      await refreshPlayerData();
-      const pool = await api.getFreeAgentPool(team.league_id);
-      setFreeAgentPool(pool);
-      setDropSelection(null);
-      setAddSelection(null);
-    } catch (e: any) {
-      showToast(e?.message || 'Swap failed', { type: 'error' });
-    }
-  };
-
-  const submitTrade = async () => {
-    if (!team || !receivingTeamId) { showToast('Select a receiving team', { type: 'warning' }); return; }
-    if (offeringPlayers.length === 0 || receivingPlayers.length === 0) { showToast('Select at least one player on each side', { type: 'warning' }); return; }
-    try {
-      await api.proposeTrade(team.league_id, team.id, receivingTeamId, offeringPlayers, receivingPlayers);
-      showToast('Trade proposed', { type: 'success' });
-      setTradeMode(false);
-      setOfferingPlayers([]);
-      setReceivingPlayers([]);
-      setReceivingTeamId(null);
-    } catch (e: any) {
-      showToast(e?.message || 'Failed to propose trade', { type: 'error' });
     }
   };
 
@@ -408,9 +364,28 @@ export default function MyTeamPage() {
             )}
             <p className="text-gray-600">{user?.username}</p>
           </div>
-          {isLocked && (
-            <div className="text-sm text-red-500">{lockMessage || 'Team changes are currently locked.'}</div>
-          )}
+          <div className="flex items-center gap-4">
+            {draftCompleted && (
+              <>
+                <button
+                  onClick={() => setFreeAgentPanelOpen(true)}
+                  disabled={isLocked}
+                  className="btn-primary disabled:opacity-50"
+                >
+                  Free Agents
+                </button>
+                <button
+                  onClick={() => setTradePanelOpen(true)}
+                  className="btn-secondary"
+                >
+                  Propose Trade
+                </button>
+              </>
+            )}
+            {isLocked && (
+              <div className="text-sm text-red-500">{lockMessage || 'Team changes are currently locked.'}</div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -521,149 +496,34 @@ export default function MyTeamPage() {
         />
       )}
 
-      {/* Free Agent Swap */}
-      {draftCompleted && (
-        <div className="card">
-          <h3 className="text-xl font-semibold mb-4">Free Agents</h3>
-          <p className="text-sm text-gray-600 mb-3">Drop or add players independently. Max 2 Duelists; cannot add already taken players. Rosters must be 7 by lock.</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="text-sm font-medium mb-2">Select player to drop</div>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {players.map(p => (
-                  <label key={p.id} className={`flex items-center justify-between p-2 border rounded cursor-pointer ${dropSelection === p.player_name ? 'border-valorant-600 bg-valorant-50' : ''}`}>
-                    <div>
-                      <div className="font-medium text-sm">{p.player_name}</div>
-                      <div className="text-xs text-gray-500">{p.team}</div>
-                    </div>
-                    <input type="radio" name="drop" checked={dropSelection === p.player_name} onChange={() => setDropSelection(p.player_name)} />
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm font-medium mb-2">Select free agent to add</div>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {freeAgentPool.map((fa) => (
-                  <label key={fa.player_name} className={`flex items-center justify-between p-2 border rounded cursor-pointer ${addSelection === fa.player_name ? 'border-valorant-600 bg-valorant-50' : ''}`}>
-                    <div>
-                      <div className="font-medium text-sm">{fa.player_name}</div>
-                      <div className="text-xs text-gray-500">{fa.team}</div>
-                    </div>
-                    <input type="radio" name="add" checked={addSelection === fa.player_name} onChange={() => setAddSelection(fa.player_name)} />
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 flex items-center justify-end gap-2">
-            <button
-              onClick={async () => {
-                if (!team) return;
-                if (!dropSelection) { showToast('Select a player to drop', { type: 'warning' }); return; }
-                try {
-                  const res = await api.dropPlayer(team.league_id, team.id, dropSelection);
-                  showToast(res.message, { type: 'success' });
-                  await refreshPlayerData();
-                  setDropSelection(null);
-                } catch (e: any) {
-                  showToast(e?.message || 'Drop failed', { type: 'error' });
-                }
-              }}
-              disabled={isLocked}
-              className="btn-secondary disabled:opacity-50"
-            >
-              Drop Only
-            </button>
-            <button
-              onClick={async () => {
-                if (!team) return;
-                if (!addSelection) { showToast('Select a player to add', { type: 'warning' }); return; }
-                try {
-                  const res = await api.addFreeAgent(team.league_id, team.id, addSelection);
-                  showToast(res.message, { type: 'success' });
-                  await refreshPlayerData();
-                  const pool = await api.getFreeAgentPool(team.league_id);
-                  setFreeAgentPool(pool);
-                  setAddSelection(null);
-                } catch (e: any) {
-                  showToast(e?.message || 'Add failed', { type: 'error' });
-                }
-              }}
-              disabled={isLocked}
-              className="btn-secondary disabled:opacity-50"
-            >
-              Add Only
-            </button>
-            <button onClick={performFreeAgentSwap} disabled={isLocked} className="btn-primary disabled:opacity-50">Submit Swap</button>
-          </div>
-        </div>
+      {/* Free Agent Panel */}
+      {team && (
+        <FreeAgentPanel
+          isOpen={freeAgentPanelOpen}
+          onClose={() => setFreeAgentPanelOpen(false)}
+          leagueId={team.league_id}
+          teamId={team.id}
+          teamPlayers={players}
+          freeAgents={freeAgentPool}
+          isLocked={isLocked}
+          onSuccess={refreshPlayerData}
+          showToast={showToast}
+        />
       )}
 
-      {/* Trade Proposal */}
-      {draftCompleted && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xl font-semibold">Propose Trade</h3>
-            <button onClick={() => setTradeMode(!tradeMode)} className="btn-secondary text-sm">{tradeMode ? 'Close' : 'Open'}</button>
-          </div>
-          {tradeMode && (
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm font-medium mb-2">Select receiving team</div>
-                <select value={receivingTeamId ?? ''} onChange={e => setReceivingTeamId(Number(e.target.value) || null)} className="input-field">
-                  <option value="">Select a team</option>
-                  {leagueTeams.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm font-medium mb-2">Your offer</div>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {players.map(p => (
-                      <label key={p.id} className={`flex items-center justify-between p-2 border rounded cursor-pointer ${offeringPlayers.includes(p.player_name) ? 'border-valorant-600 bg-valorant-50' : ''}`}>
-                        <div>
-                          <div className="font-medium text-sm">{p.player_name}</div>
-                          <div className="text-xs text-gray-500">{p.team}</div>
-                        </div>
-                        <input type="checkbox" checked={offeringPlayers.includes(p.player_name)} onChange={(e) => {
-                          setOfferingPlayers(prev => e.target.checked ? [...prev, p.player_name] : prev.filter(x => x !== p.player_name));
-                        }} />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm font-medium mb-2">Request from selected team</div>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {!receivingTeamId && (
-                      <p className="text-sm text-gray-500">Select a team to view their players</p>
-                    )}
-                    {receivingTeamId && receivingTeamPlayers.length === 0 && (
-                      <p className="text-sm text-gray-500">No players found for selected team.</p>
-                    )}
-                    {receivingTeamId && receivingTeamPlayers.map(p => (
-                      <label key={p.id} className={`flex items-center justify-between p-2 border rounded cursor-pointer ${receivingPlayers.includes(p.player_name) ? 'border-valorant-600 bg-valorant-50' : ''}`}>
-                        <div>
-                          <div className="font-medium text-sm">{p.player_name}</div>
-                          <div className="text-xs text-gray-500">{p.team}</div>
-                        </div>
-                        <input type="checkbox" checked={receivingPlayers.includes(p.player_name)} onChange={(e) => {
-                          setReceivingPlayers(prev => e.target.checked ? [...prev, p.player_name] : prev.filter(x => x !== p.player_name));
-                        }} />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <button onClick={submitTrade} className="btn-primary">Send Trade Offer</button>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* Trade Panel */}
+      {team && user && (
+        <TradePanel
+          isOpen={tradePanelOpen}
+          onClose={() => setTradePanelOpen(false)}
+          leagueId={team.league_id}
+          teamId={team.id}
+          teamPlayers={players}
+          leagueTeams={leagueTeams}
+          currentUserId={user.id}
+          onSuccess={refreshPlayerData}
+          showToast={showToast}
+        />
       )}
     </div>
   );

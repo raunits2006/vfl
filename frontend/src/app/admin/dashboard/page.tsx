@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '../../../components/ToastProvider';
 import { useRouter } from 'next/navigation';
-import { 
-  Users, 
-  Trophy, 
-  UserCheck, 
-  Activity, 
+import {
+  Users,
+  Trophy,
+  UserCheck,
+  Activity,
   Settings,
   LogOut,
   Shield,
@@ -21,10 +21,10 @@ import {
   Crown
 } from 'lucide-react';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
-import { 
-  adminPlayerApi, 
-  adminUserApi, 
-  adminLeagueApi, 
+import {
+  adminPlayerApi,
+  adminUserApi,
+  adminLeagueApi,
   adminAnalyticsApi,
   adminAgentApi,
   PlayerResponse,
@@ -42,7 +42,7 @@ export default function AdminDashboard() {
   const router = useRouter();
   const { admin, logout, loading: authLoading } = useAdminAuth();
   const { showToast } = useToast();
-  
+
   // State management
   const [activeTab, setActiveTab] = useState<'overview' | 'players' | 'agents' | 'users' | 'leagues'>('overview');
   const [players, setPlayers] = useState<PlayerResponse[]>([]);
@@ -53,24 +53,23 @@ export default function AdminDashboard() {
   const [topPlayers, setTopPlayers] = useState<PlayerResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Player management state
   const [showPlayerModal, setShowPlayerModal] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<PlayerResponse | null>(null);
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerTeamFilter, setPlayerTeamFilter] = useState('');
-  
+
   // Agent management state
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<AgentResponse | null>(null);
   const [agentSearch, setAgentSearch] = useState('');
   const [agentClassFilter, setAgentClassFilter] = useState('');
-  
+
   // Form state for player creation/editing
   const [playerForm, setPlayerForm] = useState<PlayerCreate>({
     player_name: '',
     team: '',
-    primary_role: '',
     image_url: ''
   });
 
@@ -100,7 +99,7 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       switch (activeTab) {
         case 'overview':
@@ -111,26 +110,26 @@ export default function AdminDashboard() {
           setSystemAnalytics(analytics);
           setTopPlayers(topPlayersData);
           break;
-          
+
         case 'players':
           const playersData = await adminPlayerApi.getAll(100, 0, playerTeamFilter || undefined);
           setPlayers(playersData);
           break;
-          
+
         case 'agents':
           if (admin && (admin.can_manage_players || admin.is_super_admin)) {
             const agentsData = await adminAgentApi.getAll(100, 0, agentClassFilter || undefined);
             setAgents(agentsData);
           }
           break;
-          
+
         case 'users':
           if (admin && (admin.can_manage_users || admin.is_super_admin)) {
             const usersData = await adminUserApi.getAll();
             setUsers(usersData);
           }
           break;
-          
+
         case 'leagues':
           if (admin && (admin.can_manage_leagues || admin.is_super_admin)) {
             const leaguesData = await adminLeagueApi.getAll();
@@ -147,17 +146,17 @@ export default function AdminDashboard() {
 
   const handlePlayerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       if (editingPlayer) {
         await adminPlayerApi.update(editingPlayer.player_name, playerForm);
       } else {
         await adminPlayerApi.create(playerForm);
       }
-      
+
       setShowPlayerModal(false);
       setEditingPlayer(null);
-      setPlayerForm({ player_name: '', team: '', primary_role: '', image_url: '' });
+      setPlayerForm({ player_name: '', team: '', image_url: '' });
       loadData(); // Reload players
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save player');
@@ -168,7 +167,7 @@ export default function AdminDashboard() {
     if (!confirm(`Are you sure you want to delete player "${playerName}"?`)) {
       return;
     }
-    
+
     try {
       await adminPlayerApi.delete(playerName);
       loadData(); // Reload players
@@ -183,26 +182,25 @@ export default function AdminDashboard() {
       setPlayerForm({
         player_name: player.player_name,
         team: player.team,
-        primary_role: player.primary_role || '',
         image_url: player.image_url || ''
       });
     } else {
       setEditingPlayer(null);
-      setPlayerForm({ player_name: '', team: '', primary_role: '', image_url: '' });
+      setPlayerForm({ player_name: '', team: '', image_url: '' });
     }
     setShowPlayerModal(true);
   };
 
   const handleAgentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       if (editingAgent) {
         await adminAgentApi.update(editingAgent.id, agentForm);
       } else {
         await adminAgentApi.create(agentForm);
       }
-      
+
       setShowAgentModal(false);
       setEditingAgent(null);
       setAgentForm({ name: '', agent_class: '', release_date: '', image_url: '', description: '' });
@@ -216,7 +214,7 @@ export default function AdminDashboard() {
     if (!confirm(`Are you sure you want to delete this agent?`)) {
       return;
     }
-    
+
     try {
       await adminAgentApi.delete(agentId);
       loadData(); // Reload agents
@@ -288,7 +286,7 @@ export default function AdminDashboard() {
                 <p className="text-sm text-gray-600">Welcome back, {admin.username}</p>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-600">
                 {admin.is_super_admin && (
@@ -318,66 +316,61 @@ export default function AdminDashboard() {
             <nav className="-mb-px flex space-x-8">
               <button
                 onClick={() => setActiveTab('overview')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'overview'
-                    ? 'border-red-500 text-red-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'overview'
+                  ? 'border-red-500 text-red-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
               >
                 <BarChart3 className="h-4 w-4 mr-2 inline" />
                 Overview
               </button>
-              
+
               {(admin.can_manage_players || admin.is_super_admin) && (
                 <button
                   onClick={() => setActiveTab('players')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'players'
-                      ? 'border-red-500 text-red-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'players'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <Users className="h-4 w-4 mr-2 inline" />
                   Players
                 </button>
               )}
-              
+
               {(admin.can_manage_players || admin.is_super_admin) && (
                 <button
                   onClick={() => setActiveTab('agents')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'agents'
-                      ? 'border-red-500 text-red-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'agents'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <Settings className="h-4 w-4 mr-2 inline" />
                   Agents
                 </button>
               )}
-              
+
               {(admin.can_manage_users || admin.is_super_admin) && (
                 <button
                   onClick={() => setActiveTab('users')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'users'
-                      ? 'border-red-500 text-red-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'users'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <UserCheck className="h-4 w-4 mr-2 inline" />
                   Users
                 </button>
               )}
-              
+
               {(admin.can_manage_leagues || admin.is_super_admin) && (
                 <button
                   onClick={() => setActiveTab('leagues')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'leagues'
-                      ? 'border-red-500 text-red-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'leagues'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <Trophy className="h-4 w-4 mr-2 inline" />
                   Leagues
@@ -417,7 +410,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
@@ -429,7 +422,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
@@ -441,7 +434,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
@@ -494,7 +487,7 @@ export default function AdminDashboard() {
                                   </div>
                                   <div className="ml-4">
                                     <div className="text-sm font-medium text-gray-900">{player.player_name}</div>
-                                    <div className="text-sm text-gray-500">{player.primary_role}</div>
+                                    <div className="text-sm text-gray-500">{player.team}</div>
                                   </div>
                                 </div>
                               </td>
@@ -572,7 +565,7 @@ export default function AdminDashboard() {
                         />
                       </div>
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Team Filter</label>
                       <select
@@ -586,7 +579,7 @@ export default function AdminDashboard() {
                         ))}
                       </select>
                     </div>
-                    
+
                     <div className="flex items-end">
                       <button
                         onClick={loadData}
@@ -610,9 +603,6 @@ export default function AdminDashboard() {
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Team
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Role
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Performance
@@ -645,9 +635,6 @@ export default function AdminDashboard() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {player.team}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {player.primary_role || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm text-gray-900">
@@ -720,7 +707,7 @@ export default function AdminDashboard() {
                         />
                       </div>
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Class Filter</label>
                       <select
@@ -735,7 +722,7 @@ export default function AdminDashboard() {
                         <option value="Sentinel">Sentinel</option>
                       </select>
                     </div>
-                    
+
                     <div className="flex items-end">
                       <button
                         onClick={loadData}
@@ -794,19 +781,17 @@ export default function AdminDashboard() {
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                agent.agent_class === 'Duelist' ? 'bg-red-100 text-red-800' :
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${agent.agent_class === 'Duelist' ? 'bg-red-100 text-red-800' :
                                 agent.agent_class === 'Controller' ? 'bg-blue-100 text-blue-800' :
-                                agent.agent_class === 'Initiator' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-green-100 text-green-800'
-                              }`}>
+                                  agent.agent_class === 'Initiator' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-green-100 text-green-800'
+                                }`}>
                                 {agent.agent_class}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                agent.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                              }`}>
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${agent.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                }`}>
                                 {agent.is_active ? 'Active' : 'Inactive'}
                               </span>
                             </td>
@@ -842,7 +827,7 @@ export default function AdminDashboard() {
             {activeTab === 'users' && (admin.can_manage_users || admin.is_super_admin) && (
               <div className="space-y-6">
                 <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-                
+
                 <div className="bg-white rounded-lg shadow overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -875,9 +860,8 @@ export default function AdminDashboard() {
                               {user.email}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                              }`}>
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}>
                                 {user.is_active ? 'Active' : 'Inactive'}
                               </span>
                             </td>
@@ -901,7 +885,7 @@ export default function AdminDashboard() {
             {activeTab === 'leagues' && (admin.can_manage_leagues || admin.is_super_admin) && (
               <div className="space-y-6">
                 <h2 className="text-2xl font-bold text-gray-900">League Management</h2>
-                
+
                 <div className="bg-white rounded-lg shadow overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -932,11 +916,10 @@ export default function AdminDashboard() {
                               <div className="text-sm text-gray-500">{league.description}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                league.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${league.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
                                 league.status === 'DRAFTING' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
                                 {league.status}
                               </span>
                             </td>
@@ -968,7 +951,7 @@ export default function AdminDashboard() {
             <h3 className="text-lg font-bold text-gray-900 mb-4">
               {editingPlayer ? 'Edit Player' : 'Add New Player'}
             </h3>
-            
+
             <form onSubmit={handlePlayerSubmit}>
               <div className="space-y-4">
                 <div>
@@ -978,49 +961,33 @@ export default function AdminDashboard() {
                     required
                     disabled={!!editingPlayer} // Can't change name when editing
                     value={playerForm.player_name}
-                    onChange={(e) => setPlayerForm({...playerForm, player_name: e.target.value})}
+                    onChange={(e) => setPlayerForm({ ...playerForm, player_name: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Team</label>
                   <input
                     type="text"
                     required
                     value={playerForm.team}
-                    onChange={(e) => setPlayerForm({...playerForm, team: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Primary Role</label>
-                  <select
-                    value={playerForm.primary_role}
-                    onChange={(e) => setPlayerForm({...playerForm, primary_role: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
-                  >
-                    <option value="">Select Role</option>
-                    <option value="Duelist">Duelist</option>
-                    <option value="Controller">Controller</option>
-                    <option value="Initiator">Initiator</option>
-                    <option value="Sentinel">Sentinel</option>
-                    <option value="Flex">Flex</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Image URL</label>
-                  <input
-                    type="url"
-                    value={playerForm.image_url}
-                    onChange={(e) => setPlayerForm({...playerForm, image_url: e.target.value})}
+                    onChange={(e) => setPlayerForm({ ...playerForm, team: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
               </div>
-              
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Image URL</label>
+                <input
+                  type="url"
+                  value={playerForm.image_url}
+                  onChange={(e) => setPlayerForm({ ...playerForm, image_url: e.target.value })}
+                  className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+                />
+              </div>
+
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
@@ -1038,98 +1005,101 @@ export default function AdminDashboard() {
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div >
+      )
+      }
 
       {/* Agent Modal */}
-      {showAgentModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              {editingAgent ? 'Edit Agent' : 'Add New Agent'}
-            </h3>
-            
-            <form onSubmit={handleAgentSubmit}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Agent Name</label>
-                  <input
-                    type="text"
-                    required
-                    disabled={!!editingAgent} // Can't change name when editing
-                    value={agentForm.name}
-                    onChange={(e) => setAgentForm({...agentForm, name: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
-                  />
+      {
+        showAgentModal && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">
+                {editingAgent ? 'Edit Agent' : 'Add New Agent'}
+              </h3>
+
+              <form onSubmit={handleAgentSubmit}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Agent Name</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={!!editingAgent} // Can't change name when editing
+                      value={agentForm.name}
+                      onChange={(e) => setAgentForm({ ...agentForm, name: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Agent Class</label>
+                    <select
+                      required
+                      value={agentForm.agent_class}
+                      onChange={(e) => setAgentForm({ ...agentForm, agent_class: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+                    >
+                      <option value="">Select Class</option>
+                      <option value="Duelist">Duelist</option>
+                      <option value="Controller">Controller</option>
+                      <option value="Initiator">Initiator</option>
+                      <option value="Sentinel">Sentinel</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Release Date</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Episode 1 Act 1"
+                      value={agentForm.release_date}
+                      onChange={(e) => setAgentForm({ ...agentForm, release_date: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Image URL</label>
+                    <input
+                      type="url"
+                      value={agentForm.image_url}
+                      onChange={(e) => setAgentForm({ ...agentForm, image_url: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Description</label>
+                    <textarea
+                      rows={3}
+                      value={agentForm.description}
+                      onChange={(e) => setAgentForm({ ...agentForm, description: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+                    />
+                  </div>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Agent Class</label>
-                  <select
-                    required
-                    value={agentForm.agent_class}
-                    onChange={(e) => setAgentForm({...agentForm, agent_class: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowAgentModal(false)}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    <option value="">Select Class</option>
-                    <option value="Duelist">Duelist</option>
-                    <option value="Controller">Controller</option>
-                    <option value="Initiator">Initiator</option>
-                    <option value="Sentinel">Sentinel</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+                  >
+                    {editingAgent ? 'Update' : 'Create'}
+                  </button>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Release Date</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Episode 1 Act 1"
-                    value={agentForm.release_date}
-                    onChange={(e) => setAgentForm({...agentForm, release_date: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Image URL</label>
-                  <input
-                    type="url"
-                    value={agentForm.image_url}
-                    onChange={(e) => setAgentForm({...agentForm, image_url: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
-                    rows={3}
-                    value={agentForm.description}
-                    onChange={(e) => setAgentForm({...agentForm, description: e.target.value})}
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowAgentModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"
-                >
-                  {editingAgent ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
