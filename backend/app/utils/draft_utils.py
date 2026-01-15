@@ -137,60 +137,6 @@ def get_next_draft_state(
     return next_user_id, False
 
 
-def count_team_duelists(session: Session, team_id: int) -> int:
-    """
-    Count the number of duelist players currently on a team.
-    
-    Args:
-        session: Database session
-        team_id: ID of the team
-    
-    Returns:
-        Number of duelist players on the team
-    """
-    from app.models.league_models import TeamPlayer
-    from app.models.player_pool_model import Players
-    
-    # Get all players on the team and their roles
-    team_players_with_roles = session.exec(
-        select(Players.primary_role)
-        .join(TeamPlayer, TeamPlayer.player_name == Players.player_name)
-        .where(TeamPlayer.team_id == team_id)
-    ).all()
-    
-    # Count duelists
-    duelist_count = sum(1 for role in team_players_with_roles if role == "Duelist")
-    return duelist_count
-
-
-def validate_duelist_limit(session: Session, team_id: int, player_name: str) -> tuple[bool, str]:
-    """
-    Validate that picking a player doesn't violate the duelist limit (max 2 duelists).
-    
-    Args:
-        session: Database session
-        team_id: ID of the team
-        player_name: Name of the player to be picked
-    
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    from app.models.player_pool_model import Players
-    
-    # Check if the player being picked is a duelist
-    player = session.exec(select(Players).where(Players.player_name == player_name)).first()
-    if not player or player.primary_role != "Duelist":
-        return True, ""  # Not a duelist, no restriction applies
-    
-    # Count current duelists on the team
-    current_duelist_count = count_team_duelists(session, team_id)
-    
-    if current_duelist_count >= 2:
-        return False, "Cannot pick more than 2 duelist players per team"
-    
-    return True, ""
-
-
 def get_free_agents_for_league(session: Session, league_id: int) -> List:
     """
     Get all players that are available as free agents for a specific league.

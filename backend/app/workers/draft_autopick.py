@@ -9,8 +9,7 @@ from app.database import engine
 from app.models.league_models import DraftSession, DraftPick, DraftStatus, Team, TeamPlayer, League, LeagueStatus
 from app.models.player_pool_model import Players
 from app.utils.draft_utils import (
-    get_next_draft_state, get_draft_completion_info, calculate_snake_draft_user,
-    count_team_duelists
+    get_next_draft_state, get_draft_completion_info, calculate_snake_draft_user
 )
 
 logger = logging.getLogger(__name__)
@@ -56,9 +55,15 @@ def _release_draft_lock(draft_id: int, session: Session):
     except Exception as e:
         logger.warning(f"Could not release lock for draft {draft_id}: {e}")
 
-def _perform_autopick(draft_id: int, session: Session):
+def _perform_autopick(draft_id: int, session: Session, skip_deadline_check: bool = False):
     """
     Perform autopick for a draft that has exceeded its deadline.
+    
+    Args:
+        draft_id: The ID of the draft to autopick for
+        session: The database session
+        skip_deadline_check: If True, skip the deadline check (used when called from make_pick
+                            which already verified the deadline passed)
     """
     # Try to acquire lock to prevent race conditions
     if not _acquire_draft_lock(draft_id, session):
@@ -72,15 +77,18 @@ def _perform_autopick(draft_id: int, session: Session):
             logger.warning(f"Draft {draft_id} not found or not in progress")
             return False
         
-        # Check if deadline has passed
+        # Get current timestamp (needed for pick and deadline updates)
         now = datetime.now(timezone.utc)
-        pick_deadline = draft.pick_deadline
-        if pick_deadline and pick_deadline.tzinfo is None:
-            pick_deadline = pick_deadline.replace(tzinfo=timezone.utc)
         
-        if not pick_deadline or now <= pick_deadline:
-            logger.info(f"Draft {draft_id} deadline not exceeded yet")
-            return False
+        # Check if deadline has passed (skip if called from make_pick)
+        if not skip_deadline_check:
+            pick_deadline = draft.pick_deadline
+            if pick_deadline and pick_deadline.tzinfo is None:
+                pick_deadline = pick_deadline.replace(tzinfo=timezone.utc)
+            
+            if not pick_deadline or now <= pick_deadline:
+                logger.info(f"Draft {draft_id} deadline not exceeded yet")
+                return False
         
         # Check if draft is complete using new logic
         total_picks_needed, is_complete = get_draft_completion_info(session, draft_id)
@@ -117,11 +125,7 @@ def _perform_autopick(draft_id: int, session: Session):
         picked_names = {p.player_name for p in picked_players}
         remaining = [p for p in available_players if p.player_name not in picked_names]
         
-        # Filter out duelists if team already has 2
-        current_duelist_count = count_team_duelists(session, team.id)
-        if current_duelist_count >= 2:
-            remaining = [p for p in remaining if p.primary_role != "Duelist"]
-            logger.info(f"Team {team.id} already has {current_duelist_count} duelists, filtering out duelists from autopick")
+        # Note: Duelist filtering removed since primary_role field no longer exists in Players model
         
         if not remaining:
             logger.error(f"No eligible players left to autopick for draft {draft_id}")

@@ -1,3 +1,8 @@
+"""
+User router for authenticated user operations.
+All endpoints require authentication. Users can only modify their own data.
+Admin endpoints for managing all users are in admin.py.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import List, Optional
@@ -5,16 +10,11 @@ from pydantic import BaseModel, EmailStr
 
 from app.database import get_session
 from app.models.user_model import User
-from app.utils.auth import get_current_active_user, get_password_hash
+from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 # Pydantic models for request/response
-class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -26,74 +26,28 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
-def create_user(
-    user_data: UserCreate,
-    session: Session = Depends(get_session)
+
+@router.get("/me", response_model=UserResponse)
+def get_current_user_info(
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Create a new user"""
-    # Check if username already exists
-    existing_user = session.exec(select(User).where(User.username == user_data.username)).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists"
-        )
-    
-    # Check if email already exists
-    existing_email = session.exec(select(User).where(User.email == user_data.email)).first()
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already exists"
-        )
-    
-    # Create user
-    hashed_password = get_password_hash(user_data.password)
-    user = User(
-        username=user_data.username,
-        email=user_data.email,
-        hashed_password=hashed_password
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    
+    """Get the current authenticated user's information."""
     return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        created_at=user.created_at.isoformat()
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at.isoformat()
     )
 
-@router.get("", response_model=List[UserResponse])
-@router.get("/", response_model=List[UserResponse], include_in_schema=False)
-def get_users(
-    session: Session = Depends(get_session),
-    skip: int = 0,
-    limit: int = 100
-):
-    """Get all users"""
-    users = session.exec(select(User).offset(skip).limit(limit)).all()
-    
-    return [
-        UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            is_active=user.is_active,
-            created_at=user.created_at.isoformat()
-        )
-        for user in users
-    ]
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Get a specific user by ID"""
+    """Get a specific user by ID. Requires authentication."""
     user = session.exec(select(User).where(User.id == user_id)).first()
     if not user:
         raise HTTPException(
@@ -105,69 +59,63 @@ def get_user(
         id=user.id,
         username=user.username,
         email=user.email,
+        is_active=user.is_active,
         created_at=user.created_at.isoformat()
     )
 
-@router.put("/{user_id}", response_model=UserResponse)
-def update_user(
-    user_id: int,
+
+@router.put("/me", response_model=UserResponse)
+def update_current_user(
     user_data: UserUpdate,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Update a user"""
-    user = session.exec(select(User).where(User.id == user_id)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
+    """Update the current authenticated user's information."""
     # Update fields if provided
     if user_data.username is not None:
         # Check if new username already exists
-        existing_user = session.exec(select(User).where(User.username == user_data.username, User.id != user_id)).first()
+        existing_user = session.exec(
+            select(User).where(User.username == user_data.username, User.id != current_user.id)
+        ).first()
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already exists"
             )
-        user.username = user_data.username
+        current_user.username = user_data.username
     
     if user_data.email is not None:
         # Check if new email already exists
-        existing_email = session.exec(select(User).where(User.email == user_data.email, User.id != user_id)).first()
+        existing_email = session.exec(
+            select(User).where(User.email == user_data.email, User.id != current_user.id)
+        ).first()
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already exists"
             )
-        user.email = user_data.email
+        current_user.email = user_data.email
     
-    session.add(user)
+    session.add(current_user)
     session.commit()
-    session.refresh(user)
+    session.refresh(current_user)
     
     return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        created_at=user.created_at.isoformat()
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at.isoformat()
     )
 
-@router.delete("/{user_id}")
-def delete_user(
-    user_id: int,
-    session: Session = Depends(get_session)
+
+@router.delete("/me")
+def delete_current_user(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Delete a user"""
-    user = session.exec(select(User).where(User.id == user_id)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    session.delete(user)
+    """Delete the current authenticated user's account."""
+    session.delete(current_user)
     session.commit()
     
-    return {"message": "User deleted successfully"} 
+    return {"message": "Account deleted successfully"}

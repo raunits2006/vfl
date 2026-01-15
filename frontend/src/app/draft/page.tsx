@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { Clock, User, Trophy, ListOrdered, ChevronUp, ChevronDown, Users } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { api, apiRequest } from '../../utils/api';
@@ -8,13 +8,27 @@ import { useToast } from '../../components/ToastProvider';
 import { DraftPick, DraftStatus, Player, Team, TeamSummary, FreeAgent, TeamPlayer } from '../../types/api';
 import { useSearchParams, useRouter } from 'next/navigation';
 
+// Wrapper component with Suspense boundary for useSearchParams
 export default function DraftPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-valorant-600"></div>
+      </div>
+    }>
+      <DraftPageContent />
+    </Suspense>
+  );
+}
+
+function DraftPageContent() {
   const { user, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialDraftId = Number(searchParams.get('draftId')) || undefined;
   const { showToast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
   const [draftStatus, setDraftStatus] = useState<DraftStatus | null>(null);
   const [draftPicks, setDraftPicks] = useState<DraftPick[]>([]);
   const [draftOrder, setDraftOrder] = useState<number[] | null>(null);
@@ -78,6 +92,7 @@ export default function DraftPage() {
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
         ws.onopen = () => {
+          setWsConnected(true);
           // Optionally request current state
           ws.send(JSON.stringify({ type: 'get_draft_state' }));
         };
@@ -111,25 +126,33 @@ export default function DraftPage() {
           showToast('Draft live connection error', { type: 'warning' });
         };
         ws.onclose = () => {
+          setWsConnected(false);
           wsRef.current = null;
         };
       }
     } catch { }
 
-    // Fallback polling in case websocket doesn't deliver updates
-    const poll = setInterval(() => {
-      fetchDraftStatus(draftId);
-      fetchDraftPicks(draftId);
-    }, 3000);
-
     return () => {
-      clearInterval(poll);
+      setWsConnected(false);
       if (wsRef.current) {
         try { wsRef.current.close(); } catch { }
         wsRef.current = null;
       }
     };
   }, [draftId, authLoading]);
+
+  // Fallback polling - only active when WebSocket is disconnected AND draft is still in progress
+  useEffect(() => {
+    // Skip polling if: WS connected, no draft, auth loading, or draft already completed
+    if (wsConnected || !draftId || authLoading || draftStatus?.status === 'COMPLETED') return;
+
+    const poll = setInterval(() => {
+      fetchDraftStatus(draftId);
+      fetchDraftPicks(draftId);
+    }, 3000);
+
+    return () => clearInterval(poll);
+  }, [draftId, authLoading, wsConnected, draftStatus?.status]);
 
   // If no draftId after auth loads, stop showing spinner and render fallback
   useEffect(() => {
@@ -491,8 +514,8 @@ export default function DraftPage() {
             <button
               onClick={() => setShowRoster(false)}
               className={`px-4 py-2 rounded-md font-medium transition-colors ${!showRoster
-                  ? 'bg-valorant-600 text-white'
-                  : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-valorant-600 text-white'
+                : 'text-gray-600 hover:text-gray-900'
                 }`}
             >
               Draft Board
@@ -500,8 +523,8 @@ export default function DraftPage() {
             <button
               onClick={() => setShowRoster(true)}
               className={`px-4 py-2 rounded-md font-medium transition-colors ${showRoster
-                  ? 'bg-valorant-600 text-white'
-                  : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-valorant-600 text-white'
+                : 'text-gray-600 hover:text-gray-900'
                 }`}
             >
               My Roster ({teamPlayers.length})
@@ -633,8 +656,8 @@ export default function DraftPage() {
                   <div
                     key={'player_name' in player ? player.player_name : (player as any).id}
                     className={`player-card cursor-pointer ${selectedPlayer === player.player_name
-                        ? 'border-valorant-500 bg-valorant-50'
-                        : ''
+                      ? 'border-valorant-500 bg-valorant-50'
+                      : ''
                       }`}
                     onClick={() => setSelectedPlayer(player.player_name)}
                   >

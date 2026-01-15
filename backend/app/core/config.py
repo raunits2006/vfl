@@ -24,12 +24,15 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding='utf-8', extra='ignore')
 
+import logging
+
 settings = Settings()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL is None:
-    print("Warning: DATABASE_URL environment variable not set.")
+    logging.warning("DATABASE_URL environment variable not set.")
     # For local development without Docker, you might want to set a default here
     # e.g., DATABASE_URL = "postgresql://user:pass@localhost:5432/dbname"
     # However, for Dockerized setup, it should always come from docker-compose
+

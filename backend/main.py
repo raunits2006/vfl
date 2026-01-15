@@ -1,4 +1,5 @@
 import time
+import logging
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -6,6 +7,13 @@ import httpx
 from sqlmodel import Session, select # Added select
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Assuming your project structure is backend/app/...
 # Adjust imports if your structure is different or if main.py is inside app
@@ -19,6 +27,8 @@ from app.utils.agents import FALLBACK_AGENT_TO_CLASS
 from app.workers.match_updater import update_upcoming_matches_task, maybe_trigger_scrape_live_matches # Import the tasks
 from app.core.config import settings
 from app.utils.rate_limit import limiter
+from app.utils.admin_auth import require_match_management
+from app.utils.security_headers import SecurityHeadersMiddleware
 
 # Import routers
 from app.routers import league, team, user, draft, fantasy_scores, free_agents, auth, trade, websocket, admin_auth, admin
@@ -59,6 +69,9 @@ app.add_middleware(
     allow_methods=_allowed_methods,
     allow_headers=_allowed_headers,
 )
+
+# Add security headers middleware (after CORS to ensure headers are added)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Include routers
 app.include_router(auth.router)
@@ -130,15 +143,19 @@ async def get_matches(session: Session = Depends(get_session)): # Add session de
         return upcoming_matches
 
     except Exception as e:
-        # Log the exception e
-        print(f"An unexpected error occurred while retrieving matches from the database: {str(e)}")
+        # Log the exception with proper logging
+        logger.error(f"Error retrieving matches from database: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal server error occurred while retrieving matches.")
 
 
 @app.post("/trigger-match-update", status_code=202)
-async def trigger_match_update_task():
+async def trigger_match_update_task(
+    current_admin = Depends(require_match_management)
+):
     """
     Manually triggers the Celery task to update upcoming matches.
+    Requires admin authentication with match management permissions.
     """
     task = update_upcoming_matches_task.delay()
     return {"message": "Match update task triggered successfully.", "task_id": task.id}
+

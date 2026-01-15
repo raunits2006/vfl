@@ -1,0 +1,119 @@
+# ============================================
+# Valorant Fantasy League - Production Docker Compose
+# ============================================
+# Use this file for production deployments:
+#   docker-compose -f docker-compose.prod.yml up -d
+#
+# BEFORE DEPLOYING:
+# 1. Create .env files with production secrets
+# 2. Update ALLOWED_ORIGINS in backend/.env with your domain
+# 3. Set up proper SSL/TLS termination (nginx, ALB, etc.)
+# 4. Consider using external managed database (RDS)
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    # No volume mounts in production - use built image
+    # No --reload flag in production
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile # Use production Dockerfile
+    ports:
+      - "3000:3000"
+    # No volume mounts in production
+    environment:
+      - NODE_ENV=production
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: always
+
+  db:
+    image: postgres:13-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    # DO NOT expose database port in production
+    # ports:
+    #   - "5433:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER_ENV}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD_ENV}
+      - POSTGRES_DB=${POSTGRES_DB_ENV}
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER_ENV} -d ${POSTGRES_DB_ENV}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    # DO NOT expose Redis port in production
+    # ports:
+    #   - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app worker -l warning # Use warning level in production
+    # No volume mounts in production
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app beat -l warning
+    # No volume mounts in production
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:

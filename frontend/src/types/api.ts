@@ -36,6 +36,18 @@ export interface DraftPick {
   picked_at: string;
 }
 
+export interface DraftPickDetailed {
+  id: number;
+  draft_session_id: number;
+  team_id: number;
+  team_name: string;
+  username: string;
+  player_name: string;
+  player_team: string;
+  pick_number: number;
+  picked_at: string;
+}
+
 export interface Player {
   id: number;
   player_name: string;

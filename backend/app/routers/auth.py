@@ -67,7 +67,6 @@ def register_user(
     session: Session = Depends(get_session)
 ):
     """Register a new user."""
-    """Register a new user."""
     # Check if username OR email already exist (avoid enumeration)
     existing = session.exec(
         select(User).where(

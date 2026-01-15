@@ -2,6 +2,7 @@ import {
   League,
   DraftStatus,
   DraftPick,
+  DraftPickDetailed,
   Player,
   Team,
   TeamSummary,
@@ -112,6 +113,8 @@ export const api = {
     body: JSON.stringify({ league_id: leagueId }),
   }),
   getDraftPicks: (draftId: number) => apiRequest<DraftPick[]>(`/api/drafts/${draftId}/results`),
+  getDraftResults: (draftId: number) => apiRequest<DraftPickDetailed[]>(`/api/drafts/${draftId}/results`),
+  resetDraft: (draftId: number) => apiRequest<{ message: string }>(`/api/drafts/${draftId}/reset`, { method: 'POST' }),
   setDraftOrder: (draftId: number, userIds: number[], randomize: boolean = false) =>
     apiRequest<{ draft_id: number; draft_order: number[] }>(`/api/drafts/${draftId}/order`, {
       method: 'POST',

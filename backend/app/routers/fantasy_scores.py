@@ -1261,7 +1261,7 @@ async def get_matches_with_status(session: Session = Depends(get_session)):
     current_time = int(datetime.now(timezone.utc).timestamp())
     four_hours_ago = current_time - (4 * 60 * 60)
 
-    # Get all VCT matches from the last 4 hours to 24 hours in the future
+    # Get all VCT matches from the last 4 hours onwards (no future limit)
     matches_data = session.exec(
         select(Match)
         .where(
@@ -1271,8 +1271,7 @@ async def get_matches_with_status(session: Session = Depends(get_session)):
                     Match.match_event.contains("Masters "),
                     Match.match_event.contains("Champions ")
                 ),
-                Match.unix_timestamp >= four_hours_ago,
-                Match.unix_timestamp <= current_time + (24 * 60 * 60)
+                Match.unix_timestamp >= four_hours_ago
             )
         )
         .order_by(Match.unix_timestamp)

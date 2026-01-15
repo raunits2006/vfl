@@ -449,20 +449,50 @@ export default function LeagueDetailsPage() {
             <Calendar className="h-5 w-5 mr-2 text-valorant-600" /> Draft
           </h2>
           <div className="space-y-3">
-            <button
-              onClick={startDraft}
-              className="btn-primary w-full flex items-center justify-center"
-              disabled={!!draftStatus && draftStatus.status !== 'PENDING'}
-            >
-              <Play className="h-4 w-4 mr-2" /> Start Draft
-            </button>
-            {draftStatus?.status === 'PENDING' && (
-              <button
-                onClick={() => setShowOrderModal(true)}
-                className="btn-secondary w-full flex items-center justify-center"
-              >
-                <ListOrdered className="h-4 w-4 mr-2" /> Set Draft Order
-              </button>
+            {/* Show different buttons based on draft status */}
+            {draftStatus?.status === 'COMPLETED' ? (
+              <>
+                <button
+                  onClick={() => router.push(`/leagues/${leagueId}/draft/results?draftId=${draftStatus.draft_id}`)}
+                  className="btn-primary w-full flex items-center justify-center"
+                >
+                  <Eye className="h-4 w-4 mr-2" /> View Draft
+                </button>
+                {details.members?.some((m: any) => user && m.user_id === user.id && m.is_commissioner) && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.resetDraft(draftStatus.draft_id);
+                        showToast('Draft reset successfully. You can now start a new draft.', { type: 'success' });
+                        setDraftStatus(null);
+                      } catch (e: any) {
+                        showToast(e?.message || 'Failed to reset draft', { type: 'error' });
+                      }
+                    }}
+                    className="btn-secondary w-full flex items-center justify-center"
+                  >
+                    <RefreshCcw className="h-4 w-4 mr-2" /> Start New Draft
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={startDraft}
+                  className="btn-primary w-full flex items-center justify-center"
+                  disabled={!!draftStatus && draftStatus.status !== 'PENDING'}
+                >
+                  <Play className="h-4 w-4 mr-2" /> Start Draft
+                </button>
+                {draftStatus?.status === 'PENDING' && (
+                  <button
+                    onClick={() => setShowOrderModal(true)}
+                    className="btn-secondary w-full flex items-center justify-center"
+                  >
+                    <ListOrdered className="h-4 w-4 mr-2" /> Set Draft Order
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

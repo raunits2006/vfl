@@ -73,6 +73,18 @@ class DraftPickResponse(BaseModel):
     pick_number: int
     picked_at: datetime
 
+class DraftPickDetailedResponse(BaseModel):
+    """Extended response with team and user details for draft results view."""
+    id: int
+    draft_session_id: int
+    team_id: int
+    team_name: str
+    username: str
+    player_name: str
+    player_team: str  # The pro team the player belongs to
+    pick_number: int
+    picked_at: datetime
+
 class SetDraftOrderRequest(BaseModel):
     user_ids: List[int]
     randomize: bool = False
@@ -289,8 +301,9 @@ def make_pick(
     # Check if deadline has passed
     if pick_deadline and now > pick_deadline:
         # Autopick for user - use the same logic as the background task
+        # Skip deadline check since we already verified it above
         from app.workers.draft_autopick import _perform_autopick
-        success = _perform_autopick(draft_id, session)
+        success = _perform_autopick(draft_id, session, skip_deadline_check=True)
         if not success:
             raise HTTPException(status_code=400, detail="Autopick failed")
         # Return the autopick result
@@ -411,24 +424,42 @@ def make_pick(
         picked_at=pick.picked_at
     )
 
-@router.get("/{draft_id}/results", response_model=List[DraftPickResponse])
+@router.get("/{draft_id}/results", response_model=List[DraftPickDetailedResponse])
 def get_draft_results(
     draft_id: int,
     session: Session = Depends(get_session)
 ):
+    """Get detailed draft results with team names, usernames, and player teams."""
+    # Get draft to verify it exists
+    draft = session.exec(select(DraftSession).where(DraftSession.id == draft_id)).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    
+    # Fetch picks with related data
     picks = session.exec(
         select(DraftPick).where(DraftPick.draft_session_id == draft_id).order_by(DraftPick.pick_number)
     ).all()
-    return [
-        DraftPickResponse(
+    
+    result = []
+    for pick in picks:
+        # Get team and user info
+        team = session.exec(select(Team).where(Team.id == pick.team_id)).first()
+        user = session.exec(select(User).where(User.id == team.user_id)).first() if team else None
+        # Get player's pro team
+        player = session.exec(select(Players).where(Players.player_name == pick.player_name)).first()
+        
+        result.append(DraftPickDetailedResponse(
             id=pick.id,
             draft_session_id=pick.draft_session_id,
             team_id=pick.team_id,
+            team_name=team.name if team else f"Team #{pick.team_id}",
+            username=user.username if user else "Unknown",
             player_name=pick.player_name,
+            player_team=player.team if player else "Unknown",
             pick_number=pick.pick_number,
             picked_at=pick.picked_at
-        ) for pick in picks
-    ]
+        ))
+    return result
 
 @router.post("/{draft_id}/autopick")
 def trigger_autopick(
@@ -449,4 +480,41 @@ def trigger_autopick(
     if success:
         return {"message": "Autopick completed successfully"}
     else:
-        raise HTTPException(status_code=400, detail="Autopick failed or not needed") 
+        raise HTTPException(status_code=400, detail="Autopick failed or not needed")
+
+
+@router.post("/{draft_id}/reset")
+def reset_draft(
+    draft_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Reset a completed draft to allow starting a new draft for a new season.
+    This deletes the existing draft session and all picks, allowing the commissioner
+    to start fresh."""
+    draft = session.exec(select(DraftSession).where(DraftSession.id == draft_id)).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    
+    # Only allow commissioners to reset
+    membership = session.exec(
+        select(LeagueMember).where(
+            LeagueMember.league_id == draft.league_id,
+            LeagueMember.user_id == current_user.id
+        )
+    ).first()
+    if not membership or not membership.is_commissioner:
+        raise HTTPException(status_code=403, detail="Only the league commissioner can reset the draft")
+    
+    # Delete all draft picks first (foreign key constraint)
+    picks = session.exec(
+        select(DraftPick).where(DraftPick.draft_session_id == draft_id)
+    ).all()
+    for pick in picks:
+        session.delete(pick)
+    
+    # Delete the draft session
+    session.delete(draft)
+    session.commit()
+    
+    return {"message": "Draft reset successfully. You can now start a new draft."}

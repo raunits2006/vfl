@@ -29,9 +29,9 @@ celery_app.conf.update(
 
 # Celery Beat Schedule
 celery_app.conf.beat_schedule = {
-    'update-matches-every-2-hours': {
+    'update-matches-nightly': {
         'task': 'app.workers.match_updater.update_upcoming_matches_task',
-        'schedule': crontab(minute=0, hour='*/2'),  
+        'schedule': crontab(minute=0, hour=0),  # Run at midnight UTC daily
         # Optionally, you can pass arguments to the task if it accepts them:
         # 'args': (arg1, arg2),
     },
