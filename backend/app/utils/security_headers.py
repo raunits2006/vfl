@@ -49,16 +49,30 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "max-age=31536000; includeSubDomains"
             )
         
-        # Basic Content Security Policy
-        # Note: This may need adjustment based on your frontend requirements
+        # Content Security Policy — strict in production
+        # 'unsafe-inline' and 'unsafe-eval' are removed in production for XSS hardening.
+        # If your Next.js frontend needs them, add through CSP_REPORT_ONLY or adjust per-app.
         if settings.ENVIRONMENT == "production":
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' ws: wss:; "
+                "frame-ancestors 'none'; "
+                "form-action 'self'; "
+                "base-uri 'self'"
+            )
+        else:
+            # Development: relaxed policy for hot-reload, dev tools, and inline styles
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
                 "font-src 'self' data:; "
-                "connect-src 'self';"
+                "connect-src 'self' ws: wss:"
             )
         
         return response

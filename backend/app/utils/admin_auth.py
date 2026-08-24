@@ -15,8 +15,17 @@ from app.models.admin_model import Admin
 from app.core.config import settings
 
 # Admin-specific security configuration
-# Use dedicated admin secret key if provided, otherwise derive from main secret
-ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY or (settings.SECRET_KEY + "_ADMIN")
+# In production, ADMIN_SECRET_KEY MUST be set independently — refuses to start otherwise.
+# In development, a predictable derivation is acceptable for convenience.
+if settings.ENVIRONMENT == "production":
+    if not settings.ADMIN_SECRET_KEY:
+        raise SystemExit(
+            "FATAL: ADMIN_SECRET_KEY must be set in production. "
+            "It must be a separate, independent secret from SECRET_KEY."
+        )
+    ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY
+else:
+    ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY or (settings.SECRET_KEY + "_ADMIN")
 ADMIN_ALGORITHM = "HS256"
 ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Shorter token expiry for admin
 

@@ -50,6 +50,13 @@ _default_allowed_origins = [
     "http://frontend:3000",
 ]
 _env_allowed_origins = [o.strip() for o in (getattr(settings, 'ALLOWED_ORIGINS', None) or "").split(',') if o.strip()]
+
+if settings.ENVIRONMENT == "production" and not _env_allowed_origins:
+    raise SystemExit(
+        "FATAL: ALLOWED_ORIGINS must be set in production. "
+        "Set it to a comma-separated list of your frontend domains."
+    )
+
 _allowed_origins = _env_allowed_origins if _env_allowed_origins else _default_allowed_origins
 
 # Explicit allowed methods and headers for security
