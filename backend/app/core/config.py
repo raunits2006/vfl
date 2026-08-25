@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     # Optional endpoint to fetch recent or live results to backfill matches
     VLR_API_RECENT_MATCHES_URL: str | None = None
     VLR_API_LIVE_SCORE_URL: str = "https://vlrggapi.vercel.app/match?q=live_score"
+    # Comma-separated list of match event patterns to include in fantasy scoring.
+    # Each entry is a SQL LIKE pattern. Use "%" for wildcard matching.
+    # Examples:
+    #   "VCT 2026: Americas Stage 1"              (single event, default)
+    #   "VCT 2026:%,VCT 2025:%"                   (all 2025+2026 VCT events)
+    #   "%"                                        (all events, use cautiously)
+    SCORING_MATCH_EVENTS: str = "VCT 2026: Americas Stage 1"
     # SECURITY: No default - must be provided via environment variable
     # Generate with: python -c "import secrets; print(secrets.token_urlsafe(64))"
     SECRET_KEY: str

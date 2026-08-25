@@ -14,6 +14,7 @@ from app.utils.draft_utils import check_team_lock_status
 from app.utils.deps import enforce_team_unlocked
 from app.utils.agents import get_valid_agents, get_agent_class, FALLBACK_AGENT_TO_CLASS
 from app.utils.auth import get_current_active_user
+from app.core.config import settings
 from sqlmodel import and_, or_, func
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -655,20 +656,50 @@ class SwapPlayersResponse(BaseModel):
 
 
 def _calculate_player_total_score(player_name: str, session: Session) -> float:
-    """Calculate total score for a player from VCT 2026: Americas Stage 1 matches only."""
-    # Only count scores from VCT 2026: Americas Stage 1
+    """Calculate total score for a player from configured match events.
+
+    The events to include are controlled by the SCORING_MATCH_EVENTS config.
+    Each entry is a SQL LIKE pattern (comma-separated).
+    Defaults to "VCT 2026: Americas Stage 1" for single-event scoring.
+    Set to "%" to include all match events.
+    """
+    from sqlalchemy import or_
+
+    raw = settings.SCORING_MATCH_EVENTS.strip()
+    if not raw or raw == "%":
+        # All events: no event filter
+        scores = session.exec(
+            select(PlayerStat.score)
+            .join(Match, Match.id == PlayerStat.match_id)
+            .where(
+                and_(
+                    PlayerStat.player_name == player_name,
+                    PlayerStat.score.is_not(None),
+                )
+            )
+        ).all()
+        return sum(float(s) for s in scores if s is not None)
+
+    patterns = [p.strip() for p in raw.split(",") if p.strip()]
+    if not patterns:
+        return 0.0
+
+    # Build an OR clause of LIKE conditions
+    conditions = [PlayerStat.player_name == player_name, PlayerStat.score.is_not(None)]
+    if len(patterns) == 1:
+        conditions.append(Match.match_event == patterns[0])
+    else:
+        like_clauses = [Match.match_event.like(p) for p in patterns if "%" in p or "_" in p]
+        eq_clauses = [Match.match_event == p for p in patterns if "%" not in p and "_" not in p]
+        event_conditions = like_clauses + eq_clauses
+        conditions.append(or_(*event_conditions))
+
     scores = session.exec(
         select(PlayerStat.score)
         .join(Match, Match.id == PlayerStat.match_id)
-        .where(
-            and_(
-                PlayerStat.player_name == player_name,
-                PlayerStat.score.is_not(None),
-                Match.match_event == "VCT 2026: Americas Stage 1"
-            )
-        )
+        .where(and_(*conditions))
     ).all()
-    
+
     return sum(float(s) for s in scores if s is not None)
 
 

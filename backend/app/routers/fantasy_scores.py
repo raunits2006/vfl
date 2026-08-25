@@ -389,7 +389,7 @@ def get_current_event(session) -> str:
             select(Match.match_event)
             .where(
                 and_(
-                    Match.match_event.like(f"VCT 2025: {region}%"),
+                    Match.match_event.like(f"VCT %: {region}%"),
                     Match.unix_timestamp >= four_hours_ago,
                     Match.unix_timestamp <= current_time  # Only past/current matches
                 )
@@ -406,7 +406,7 @@ def get_current_event(session) -> str:
         select(Match.match_event)
         .where(
             and_(
-                Match.match_event.like("VCT 2025:%Stage 2"),
+                Match.match_event.like("VCT %:Stage 2"),
                 Match.unix_timestamp >= four_hours_ago,
                 Match.unix_timestamp <= current_time
             )
