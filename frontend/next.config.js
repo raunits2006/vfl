@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Strip console.log/warn in production builds (keep console.error for debugging)
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production'
+      ? { exclude: ['error'] }
+      : false,
+  },
   async rewrites() {
     // In Docker, use backend service name; locally use localhost
     const backendUrl = process.env.BACKEND_URL || 

@@ -14,7 +14,7 @@ export default function LeagueDetailsPage() {
   const params = useParams<{ id: string }>();
   const leagueId = Number(params.id);
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
 
   const [details, setDetails] = useState<any>(null);
@@ -34,6 +34,25 @@ export default function LeagueDetailsPage() {
   const [viewingTeam, setViewingTeam] = useState<{ name: string; ownerUsername: string; userId: number } | null>(null);
   const [viewingTeamPlayers, setViewingTeamPlayers] = useState<TeamPlayer[]>([]);
   const [viewTeamLoading, setViewTeamLoading] = useState(false);
+
+  // Auth guard: redirect unauthenticated users
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/signin');
+    }
+  }, [authLoading, user, router]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-valorant-600 mx-auto" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   const fetchDetails = async () => {
     try {
