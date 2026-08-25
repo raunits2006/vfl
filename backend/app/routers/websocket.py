@@ -27,7 +27,13 @@ async def websocket_draft_endpoint(
 ):
     """
     WebSocket endpoint for real-time draft updates.
-    
+
+    Authentication is accepted via two channels (in priority order):
+    1. Sec-WebSocket-Protocol header: ``Bearer <token>`` as a subprotocol.
+       Browsers strip query params from ws:// URLs in some scenarios; the
+       header avoids token leakage into proxy/load-balancer access logs.
+    2. ``?token=`` query parameter (fallback for backward compatibility).
+
     Provides live updates for:
     - Draft picks
     - Timer updates
@@ -35,12 +41,27 @@ async def websocket_draft_endpoint(
     - User connections/disconnections
     - Autopick notifications
     """
-    # Basic token validation (simplified)
-    if not token:
+    # Try the Sec-WebSocket-Protocol header first (avoids token in URL logs),
+    # then fall back to the query parameter.
+    _raw_token: Optional[str] = None
+
+    # 1. Sec-WebSocket-Protocol
+    ws_protocols = websocket.headers.get("sec-websocket-protocol", "")
+    for proto in ws_protocols.split(","):
+        proto = proto.strip()
+        if proto.startswith("Bearer "):
+            _raw_token = proto[7:]
+            break
+
+    # 2. Query parameter fallback
+    if not _raw_token and token:
+        _raw_token = token
+
+    if not _raw_token:
         await websocket.close(code=1008, reason="Authentication required")
         return
-    
-    username = verify_token(token)
+
+    username = verify_token(_raw_token)
     if not username:
         await websocket.close(code=1008, reason="Invalid token")
         return

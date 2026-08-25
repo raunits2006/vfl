@@ -88,8 +88,10 @@ function DraftPageContent() {
         };
 
         const wsBase = buildWsBase();
-        const wsUrl = `${wsBase}/ws/draft/${draftId}?token=${encodeURIComponent(token)}`;
-        const ws = new WebSocket(wsUrl);
+        const wsUrl = `${wsBase}/ws/draft/${draftId}`;
+        // Pass token in Sec-WebSocket-Protocol to avoid leaking it in access logs.
+        // The backend also accepts ?token= as a fallback.
+        const ws = new WebSocket(wsUrl, [`Bearer ${token}`]);
         wsRef.current = ws;
         ws.onopen = () => {
           setWsConnected(true);
