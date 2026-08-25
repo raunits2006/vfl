@@ -42,8 +42,12 @@ export default function MatchesPage() {
 
   useEffect(() => {
     let active = true;
+    let isInitialLoad = true;
+
     async function load() {
-      setLoading(true);
+      // Only show loading spinner on initial load, not on subsequent polls
+      if (isInitialLoad) setLoading(true);
+
       try {
         const [liveMatches, allMatches] = await Promise.all([
           api.getLiveMatches(),
@@ -52,8 +56,13 @@ export default function MatchesPage() {
         if (!active) return;
         setLive(liveMatches);
         setAll(allMatches);
+      } catch {
+        // Backend unreachable — keep empty states, no crash
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          isInitialLoad = false;
+        }
       }
     }
     load();

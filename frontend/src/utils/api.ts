@@ -42,18 +42,24 @@ export async function authenticatedFetch(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
 
-  if (response.status === 401) {
-    // Token is invalid, clear it
-    localStorage.removeItem('token');
-    window.location.href = '/signin';
+    if (response.status === 401) {
+      // Token is invalid, clear it
+      localStorage.removeItem('token');
+      window.location.href = '/signin';
+    }
+
+    return response;
+  } catch (_err) {
+    // Network error: backend unreachable (ECONNREFUSED, DNS, etc.)
+    // Return a synthetic 503 response so callers get a proper ApiError
+    throw new ApiError(503, 'Backend is unreachable — server may be starting up or offline.');
   }
-
-  return response;
 }
 
 export async function apiRequest<T>(

@@ -12,13 +12,17 @@ interface State {
 }
 
 /**
- * Global Error Boundary component to catch unhandled React rendering errors.
+ * Global Error Boundary component to catch unhandled React rendering errors
+ * AND unhandled Promise rejections (async API calls in useEffect, etc.).
  * Prevents the entire app from crashing and shows a user-friendly error message.
  */
 class ErrorBoundary extends Component<Props, State> {
+    private _rejectionHandler: ((event: PromiseRejectionEvent) => void) | null;
+
     constructor(props: Props) {
         super(props);
         this.state = { hasError: false, error: null };
+        this._rejectionHandler = null;
     }
 
     static getDerivedStateFromError(error: Error): State {
@@ -26,8 +30,26 @@ class ErrorBoundary extends Component<Props, State> {
     }
 
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        // Log error to console in development
-        console.error('ErrorBoundary caught an error:', error, errorInfo);
+        if (process.env.NODE_ENV === 'development') {
+            console.error('ErrorBoundary caught render error:', error, errorInfo);
+        }
+    }
+
+    componentDidMount() {
+        // Catch unhandled Promise rejections from async effects / event handlers.
+        // React error boundaries only catch render-phase errors, so without this
+        // listener an API call failure in useEffect can crash the page overlay.
+        this._rejectionHandler = (event: PromiseRejectionEvent) => {
+            this.setState({ hasError: true, error: event.reason || new Error(String(event.reason)) });
+            event.preventDefault();
+        };
+        window.addEventListener('unhandledrejection', this._rejectionHandler);
+    }
+
+    componentWillUnmount() {
+        if (this._rejectionHandler) {
+            window.removeEventListener('unhandledrejection', this._rejectionHandler);
+        }
     }
 
     handleRefresh = () => {
