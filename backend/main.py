@@ -128,7 +128,33 @@ async def root():
 
 @app.get("/healthz")
 async def healthz():
+    """Basic liveness probe — always returns 200 if the server is running."""
     return {"status": "ok"}
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe — checks DB and Redis connectivity."""
+    from sqlmodel import Session, text
+    import redis as _redis
+    from app.database import engine
+    from app.core.config import settings
+
+    # Check DB
+    try:
+        with Session(engine) as s:
+            s.execute(text("SELECT 1"))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database unreachable: {e}")
+
+    # Check Redis
+    try:
+        r = _redis.from_url(settings.REDIS_URL, socket_connect_timeout=2)
+        if not r.ping():
+            raise HTTPException(status_code=503, detail="Redis ping failed")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Redis unreachable: {e}")
+
+    return {"status": "ready"}
 
 @app.get("/matches")
 async def get_matches(session: Session = Depends(get_session)): # Add session dependency

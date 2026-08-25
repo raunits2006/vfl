@@ -12,6 +12,7 @@ from app.database import engine # Ensure 'engine' is defined and importable from
 from app.models.match_model import Match, MatchCreate
 from datetime import datetime, timezone, timedelta
 from app.workers.live_match_scraper import scrape_live_match_data
+from app.utils.vlr_circuit_breaker import vlr_upcoming_circuit, vlr_live_score_circuit
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -37,17 +38,26 @@ async def _fetch_and_process_matches_logic(session: Session):
     updated_count = 0
 
     async with httpx.AsyncClient() as client:
+        # Circuit breaker: skip if VLR upcoming API is known to be down
+        if vlr_upcoming_circuit.is_open:
+            logger.warning("VLR upcoming API circuit is OPEN — skipping fetch")
+            return
+
         try:
             response = await client.get(settings.VLR_API_UPCOMING_MATCHES_URL)
             response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx
             raw_data = response.json()
+            vlr_upcoming_circuit.record_success()
         except httpx.HTTPStatusError as exc:
+            vlr_upcoming_circuit.record_failure()
             logger.error(f"HTTP error {exc.response.status_code} from VLR API: {exc.request.url!r} - Response: {exc.response.text}")
             raise  # Propagate to Celery task for failure handling
         except httpx.RequestError as exc:
+            vlr_upcoming_circuit.record_failure()
             logger.error(f"Request error connecting to VLR API: {exc.request.url!r}")
             raise  # Propagate to Celery task for failure handling
         except Exception as exc:
+            vlr_upcoming_circuit.record_failure()
             logger.error(f"Unexpected error during API call or JSON parsing: {str(exc)}")
             raise
 
